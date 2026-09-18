@@ -84,7 +84,8 @@ def build_verify_script(repo_url: str, run_id: str, dep_names: list[str], start_
     reqs_json = shlex.quote(json.dumps(dep_names))
     url = f"http://127.0.0.1:{port}{health_path}"
     kill_block = "" if keep_running else '''
-kill "$APP_PID" 2>/dev/null; sleep 1; kill -9 "$APP_PID" 2>/dev/null; true
+kill "$APP_PID" 2>/dev/null; sleep 1; kill -9 "$APP_PID" 2>/dev/null
+for _p in /proc/[0-9]*; do if grep -qa "$WORK/.venv" "$_p/cmdline" 2>/dev/null; then kill "${_p#/proc/}" 2>/dev/null; fi; done; true
 echo "__APP_STOPPED__=1"
 '''
     return f"""
@@ -102,7 +103,8 @@ echo "__STAGE__=start"
 APPLOG=/tmp/nomeshops-{run_id}-app.log
 # stop anything from a previous run on this port
 (fuser -k {port}/tcp >/dev/null 2>&1 || true)
-nohup sh -c {shlex.quote(start_command)} > "$APPLOG" 2>&1 &
+# exec so $APP_PID is the app itself, not a wrapper shell (otherwise kill leaves the app running)
+nohup sh -c {shlex.quote("exec " + start_command)} > "$APPLOG" 2>&1 &
 APP_PID=$!
 echo "__APP_PID__=$APP_PID"
 cat > /tmp/nomeshops-{run_id}-health.py <<'__NOMESHOPS_PY__'

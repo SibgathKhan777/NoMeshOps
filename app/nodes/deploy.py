@@ -61,7 +61,10 @@ LOG=/tmp/nomeshops-{run_id}-install.log
 FIXLOG=/tmp/nomeshops-{run_id}-fix.log
 {pre_block}
 echo "__STAGE__=clone"
-rm -rf "$WORK"; mkdir -p "$(dirname "$WORK")"
+# stop anything still running out of a previous attempt's venv, then start from a clean directory
+for _p in /proc/[0-9]*; do if grep -qa "$WORK/.venv" "$_p/cmdline" 2>/dev/null; then kill "${{_p#/proc/}}" 2>/dev/null; fi; done; sleep 0.5
+rm -rf "$WORK" 2>/dev/null; if [ -e "$WORK" ]; then sleep 1; rm -rf "$WORK"; fi
+mkdir -p "$(dirname "$WORK")"
 if ! git clone --depth 1 {branch_flag} {shlex.quote(repo_url)} "$WORK" > "$LOG" 2>&1; then
   tail -c 4000 "$LOG"; echo "__RESULT__=clone_failed"; exit {EXIT_CLONE}
 fi
