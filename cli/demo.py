@@ -46,7 +46,7 @@ def _summary(final: dict) -> None:
     console.print(Panel(f"[{'bold green' if ok else 'bold red'}]{'DEPLOY VERIFIED' if ok else 'DEPLOY FAILED'}[/] in {final.get('duration_s', 0)}s"
                         + (f"\n{final.get('failure_reason')}" if final.get("failure_reason") else "")
                         + (f"\nfix stored in DynamoDB: yes" if final.get("stored_fix") else "")
-                        + (f"\naudit log: s3://…/{final.get('s3_key')}" if final.get("s3_key") else ""),
+                        + (f"\naudit log: {final['s3_key'] if str(final['s3_key']).startswith('.') or '/' == str(final['s3_key'])[:1] else 's3://…/' + final['s3_key']}" if final.get("s3_key") else ""),
                         border_style="green" if ok else "red"))
 
 

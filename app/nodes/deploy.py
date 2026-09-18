@@ -18,6 +18,8 @@ EXIT_CLONE = 10
 EXIT_VENV = 11
 EXIT_INSTALL = 12
 EXIT_FIX = 13
+EXIT_LOCKED = 14
+LOCK_STALE_SECONDS = 1800
 
 
 def project_slug(repo_url: str) -> str:
@@ -60,6 +62,19 @@ WORK={shlex.quote(work)}
 LOG=/tmp/nomeshops-{run_id}-install.log
 FIXLOG=/tmp/nomeshops-{run_id}-fix.log
 {pre_block}
+LOCK="$WORK.lock"
+# one deploy at a time per target+project: the lock names the run that owns it; a stale lock (>30 min) is reclaimed
+if mkdir "$LOCK" 2>/dev/null; then
+  echo "{run_id}" > "$LOCK/owner"; date +%s > "$LOCK/since"
+else
+  OWNER=$(cat "$LOCK/owner" 2>/dev/null); SINCE=$(cat "$LOCK/since" 2>/dev/null || echo 0); NOW=$(date +%s)
+  if [ "$OWNER" != "{run_id}" ] && [ $((NOW - SINCE)) -lt {LOCK_STALE_SECONDS} ]; then
+    echo "__LOCK_OWNER__=$OWNER"; echo "__LOCK_AGE__=$((NOW - SINCE))"
+    echo "another deploy (run $OWNER, started $((NOW - SINCE))s ago) is in progress on this target"
+    echo "__RESULT__=locked"; exit {EXIT_LOCKED}
+  fi
+  echo "{run_id}" > "$LOCK/owner"; date +%s > "$LOCK/since"
+fi
 echo "__STAGE__=clone"
 # stop anything still running out of a previous attempt's venv, then start from a clean directory
 for _p in /proc/[0-9]*; do if grep -qa "$WORK/.venv" "$_p/cmdline" 2>/dev/null; then kill "${{_p#/proc/}}" 2>/dev/null; fi; done; sleep 0.5
@@ -98,6 +113,9 @@ def deploy_attempt(repo_url: str, branch: str | None, instance_id: str, run_id: 
     result = markers.get("RESULT", "")
     return {
         "stage": "install",
+        "locked": result == "locked",
+        "lock_owner": markers.get("LOCK_OWNER"),
+        "lock_age_s": markers.get("LOCK_AGE"),
         "ok": res.ok and result == "install_ok",
         "result": result or ("timeout" if res.status == "TimedOut" else f"ssm_{res.status.lower()}"),
         "exit_code": res.exit_code,
@@ -110,3 +128,13 @@ def deploy_attempt(repo_url: str, branch: str | None, instance_id: str, run_id: 
         "stdout": res.stdout,
         "stderr": res.stderr,
     }
+
+
+def release_lock(repo_url: str, instance_id: str, run_id: str) -> None:
+    """Drop the per-target lock if this run owns it. Called from finalize; failures are non-fatal."""
+    work = workdir_for(repo_url)
+    script = f"""
+LOCK={shlex.quote(work)}.lock
+if [ "$(cat "$LOCK/owner" 2>/dev/null)" = "{run_id}" ]; then rm -rf "$LOCK"; echo "__LOCK__=released"; else echo "__LOCK__=not_owner"; fi
+"""
+    run_shell(instance_id, script, timeout=60, comment=f"nomeshops unlock {run_id}")

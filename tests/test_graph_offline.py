@@ -83,3 +83,21 @@ def test_signature_is_stable_and_context_aware():
     assert e1.signature == e2.signature
     assert e1.signature != e3.signature and e1.family == e3.family
     assert e1.error_type == "BuildError" and e1.package == "psycopg2" and e1.package_version == "==2.9.9"
+
+
+def test_busy_target_fails_fast_without_fix_ladder(fakes, request_payload, monkeypatch):
+    from app.aws.ssm import CommandResult
+    box = fakes["box"]
+    orig = box.run
+
+    def run(script):
+        if "__STAGE__=clone" in script and "LOCK=" in script:
+            return CommandResult("c-dep", "Failed", 14, "__LOCK_OWNER__=deadbeef\n__LOCK_AGE__=42\n__RESULT__=locked\n", "", 0.2)
+        return orig(script)
+    box.run = run
+    st = run_deploy(request_payload)
+    assert st["final_status"] == "failed" and not st["deploy_success"]
+    assert st["current_error"]["error_type"] == "TargetBusy"
+    assert "deadbeef" in st["failure_reason"]
+    assert fakes["bedrock"].calls == 0 and not fakes["kb"].items
+    assert len(st["attempts"]) == 1

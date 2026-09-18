@@ -21,7 +21,7 @@ from langgraph.graph import END, StateGraph
 from app.config import settings
 from app.nodes import knowledge, rules, signature
 from app.nodes.bedrock_fix import propose_fix
-from app.nodes.deploy import deploy_attempt
+from app.nodes.deploy import deploy_attempt, release_lock
 from app.nodes.fingerprint import fingerprint_instance
 from app.nodes.scan import guess_start_command, scan_repo
 from app.nodes.store import store_attempt
@@ -51,6 +51,7 @@ class DeployState(TypedDict, total=False):
     stored_fix: bool
     s3_key: str | None
     duration_s: float
+    lock_held: bool
 
 
 def _ev(state: DeployState, level: str, node: str, msg: str, **data: Any) -> dict:
@@ -149,6 +150,13 @@ def deploy(state: DeployState) -> dict:
     if res["ok"]:
         events.append(_ev(state, "success", "deploy", f"install ok in {res['duration_s']}s"))
         out["current_error"] = None
+        return out
+    if res.get("locked"):
+        msg = f"another deploy (run {res.get('lock_owner')}, started {res.get('lock_age_s')}s ago) is in progress on {req['instance_id']}"
+        events.append(_ev(state, "error", "deploy", msg))
+        out["current_error"] = {"error_type": "TargetBusy", "stage": "lock", "message": msg, "signature": "", "family": ""}
+        out["last_output"] = msg
+        out["lock_held"] = False
         return out
     output = res["stdout"] + "\n" + res["stderr"]
     err = signature.classify(res["stdout"], res["stderr"], res.get("failed_stage") or "install",
@@ -331,6 +339,11 @@ def finalize(state: DeployState) -> dict:
         "attempts": state.get("attempts", []), "fix_chain": chain, "stored_fix": stored,
         "events": state.get("events", []) + events,
     }
+    if state.get("lock_held", True) and state.get("attempts"):
+        try:
+            release_lock(state["request"]["repo_url"], state["request"]["instance_id"], state["run_id"])
+        except Exception as e:  # noqa: BLE001
+            events.append(_ev(state, "warn", "finalize", f"could not release target lock: {type(e).__name__}: {str(e)[:120]}"))
     key = None
     try:
         key = store_attempt(record)
@@ -373,6 +386,8 @@ def route_failure(state: DeployState) -> str:
         return "finalize"
     if err.get("error_type") in ("GitError",) and "not found" not in err.get("message", "").lower():
         return "finalize"  # bad repo URL / branch: no fix will help
+    if err.get("error_type") == "TargetBusy":
+        return "finalize"  # not our failure to fix: another run owns the target
     tried = state.get("tried", {}).get(err["signature"], [])
     if "rules" not in tried:
         return "lookup_rules"

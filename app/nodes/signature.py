@@ -74,7 +74,8 @@ def classify(stdout: str, stderr: str, stage: str, deps: list[dict] | None = Non
                 info.package = "psycopg2"
             break
     if info.error_type == "UnknownError":
-        lines = [l for l in (stderr or stdout).splitlines() if l.strip()]
+        lines = [l for l in (stderr + "\n" + stdout).splitlines()
+                 if l.strip() and not (l.startswith("__") and "__=" in l) and not l.startswith("__")]
         info.message = (lines[-1] if lines else f"{stage} failed")[:500]
 
     # package version: prefer pip's "Collecting pkg==x" line, else the declared specifier
