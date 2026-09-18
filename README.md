@@ -141,18 +141,38 @@ cp .env.local.example .env
 ./scripts/local_targets.sh --stop
 ```
 
-Measured locally (2026-09-19): the rules table bootstrapped python + git into the bare Ubuntu container
-(~2 min of apt), the typo failure produced **the same signature as the real EC2 runs** (`44ed471b…`), so a fix learned
-on AWS resolves locally and vice versa; with `LLM_BACKEND=none` the run fails cleanly, and after seeding the fix the
-next run hit the local knowledge base in 3 ms and verified in 50 s. The Amazon Linux container (Python 3.9) then
-produced a different exact signature, got the Ubuntu fix through the **family index** (75 ms), verified it, and stored
-it under its own signature — cross-platform knowledge transfer with verification as the gate. Scripts, signatures and
-the verification gate are identical between the two modes; only the transport differs.
+**Measured locally, post-hardening (2026-09-19).** Full end-to-end suite on the two containers, 11 of 11
+scenarios correct. `LLM_BACKEND=none`, so every resolution below came from the rules table or the knowledge base:
 
-## Demo runbook (measured on 2026-09-18, ap-south-1, personal account)
+| scenario | what the loop did | time |
+|---|---|---|
+| clean project | no predicted issues, installs and verifies first try | 22.3 s |
+| typo dependency, Ubuntu | KB exact hit → `sed` fix → verified | 32.0 s |
+| typo dependency, Amazon Linux | different exact signature → **family-index** hit from the Ubuntu fix → verified → stored under its own signature | 37.3 s |
+| psycopg2 source build | rules predicted the missing libpq headers and pre-installed them → verified first try | 70.7 s |
+| `pyproject.toml`-only manifest | parsed and deployed with no `requirements.txt` | 44.8 s |
+| Flask app | start command auto-detected from the manifest | 14.4 s |
+| app crashes at startup | verification catches it, clean failure, nothing learned | 21.0 s |
+| undeclared runtime import | app fails to start, `ImportError` on the exact missing module | 72.8 s |
+| wrong health path | health gate fails, run reported as failed | 79.0 s |
+| bad repo URL | `GitError`, stops immediately, no fix ladder, no model call | 3.1 s |
+| unreachable target | `UnreachableTarget`, stops immediately | 1.4 s |
 
-The sample repo `https://github.com/SibgathKhan777/nomeshops-sample` now ships the fast-failing typo variant
-(`reqests==2.31.0`). Real runs:
+**Cross-project transfer.** A separate project inside the container, sharing only the faulty dependency, resolved
+from the fix learned on the sample project: **exact KB hit in 1 ms**, verified in 24.3 s, counter incremented rather
+than a duplicate row written.
+
+A bare Ubuntu container costs roughly 2 extra minutes on its first run while the rules table installs python and git.
+Signatures, scripts and the verification gate are identical between local and AWS mode; only the transport differs,
+so a fix learned on AWS resolves locally and vice versa.
+
+## Demo runbook
+
+The sample repo `https://github.com/SibgathKhan777/nomeshops-sample` ships the fast-failing typo variant
+(`reqests==2.31.0`), which is the one to film: the whole three-beat story fits in about 80 seconds.
+
+**On real AWS (ap-south-1, 2026-09-18/19).** These runs predate the hardening in `evals/`, so read the times as the
+shape of the loop rather than as post-fix benchmarks:
 
 | step | box | what happened | time |
 |---|---|---|---|
@@ -160,14 +180,16 @@ The sample repo `https://github.com/SibgathKhan777/nomeshops-sample` now ships t
 | 2 | Ubuntu 22.04 B | same signature → **KB hit in 301 ms** → same fix → verified → success_count 2, **0 LLM calls** | 34 s |
 | 3 | AL2023 (py 3.9) | rules pre-installed git+pip → verified first try, 0 fixes | 58 s |
 
-Earlier runs with `variants/requirements-numpy-old-pin.txt` (numpy 1.19.5 on Python 3.10) took ~230 s because pip
-spends ~3 min trying to compile numpy before failing; same Bedrock → KB story, just slower. `requirements-rules-path.txt`
-(psycopg2 → `pg_config not found`) shows the deterministic path.
+The deployed orchestrator ran the same Ubuntu B deploy end to end (SSM + DynamoDB hit in 45 ms + S3) in 29.6 s using
+only its ECS task role, with no local credentials involved.
 
-The two Ubuntu boxes must share OS / arch / Python minor for the exact-signature hit (they do: ubuntu22 / x86_64 / 3.10).
+Post-hardening numbers for the same three beats, measured locally, are in the Local mode table above. The two Ubuntu
+boxes must share OS / arch / Python minor for the exact-signature hit; across platforms the family index carries the
+fix instead, with verification still acting as the gate.
 
-The deployed orchestrator ran the same Ubuntu B deploy end to end (SSM + DynamoDB hit in 45 ms + S3) in 29.6 s
-using only its ECS task role — no local credentials involved.
+Other variants in the sample repo: `variants/requirements-numpy-old-pin.txt` (numpy 1.19.5 on Python 3.10) takes
+~230 s because pip spends ~3 min trying to compile numpy before failing, same story but too slow for a short video;
+`variants/requirements-rules-path.txt` (psycopg2 → `pg_config not found`) shows the deterministic path.
 
 Evidence for the video: `python -m cli.demo fixes list` (DynamoDB rows with `source=bedrock`, `success_count`),
 `python -m cli.demo attempts` (S3 objects), and the SSM Run Command history in the console.
