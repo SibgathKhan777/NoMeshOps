@@ -11,6 +11,7 @@ Stop conditions: MAX_FIX_ATTEMPTS total fix retries, MAX_LLM_ATTEMPTS Bedrock ca
 from __future__ import annotations
 
 import operator
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -52,6 +53,7 @@ class DeployState(TypedDict, total=False):
     s3_key: str | None
     duration_s: float
     lock_held: bool
+    transient_retries: int
 
 
 def _ev(state: DeployState, level: str, node: str, msg: str, **data: Any) -> dict:
@@ -186,6 +188,9 @@ def verify(state: DeployState) -> dict:
                     "verify_output_tail": (res["stdout"] + "\n" + res["stderr"])[-3000:]}
     out: dict = {"attempts": attempts, "events": events}
     det = res.get("import_detail", {})
+    if res.get("port_stale_cleared"):
+        events.append(_ev(state, "warn", "verify",
+                          f"cleared stale listener(s) on port {req.get('app_port', 8000)}: pid(s) {res['port_stale_cleared']}"))
     if res["ok"]:
         events.append(_ev(state, "success", "verify",
                           f"import ok ({len(det.get('imported', []))} packages) · app started · "
@@ -198,6 +203,16 @@ def verify(state: DeployState) -> dict:
         msg = "; ".join(det.get("missing", []) + det.get("import_fail", []))[:300]
         events.append(_ev(state, "error", "verify", f"import check FAILED: {msg}"))
         stdout = stdout + "\n" + "\n".join(det.get("import_fail", []))
+    elif res.get("port_busy_pids"):
+        events.append(_ev(state, "error", "verify",
+                          f"port {req.get('app_port', 8000)} is held by pid(s) {res['port_busy_pids']} and could not be freed; "
+                          f"refusing to score another process's app as verified"))
+        stdout = stdout + "\nPortBusy: port already in use by pid " + str(res["port_busy_pids"])
+    elif res.get("health_foreign_pid"):
+        events.append(_ev(state, "error", "verify",
+                          f"health check was answered by pid {res['health_foreign_pid']}, not the app we started: "
+                          f"treating this as NOT verified"))
+        stdout = stdout + "\nPortBusy: health answered by foreign pid " + str(res["health_foreign_pid"])
     elif not res["app_started"]:
         events.append(_ev(state, "error", "verify", "app process exited before answering the health check"))
     else:
@@ -217,6 +232,14 @@ def _mark(state: DeployState, source: str) -> dict:
     tried = {k: list(v) for k, v in state.get("tried", {}).items()}
     tried.setdefault(sig, []).append(source)
     return tried
+
+
+def retry_transient(state: DeployState) -> dict:
+    """A network blip is not a defect: retry the same deploy unchanged. Nothing is learned either way."""
+    n = state.get("transient_retries", 0) + 1
+    return {"transient_retries": n, "current_fix": None,
+            "events": [_ev(state, "warn", "retry", f"transient infrastructure error ({state['current_error'].get('message', '')[:80]}): "
+                                                   f"retrying unchanged ({n}/{settings.max_transient_retries}); no fix will be learned")]}
 
 
 def lookup_rules(state: DeployState) -> dict:
@@ -292,11 +315,32 @@ def finalize(state: DeployState) -> dict:
     chain = state.get("fix_chain", [])
     fp = state["fingerprint"]
     reason = ""
+    # Per-attempt attribution: a fix is credited/penalised by the attempt it was introduced in, so a
+    # knowledge-base fix that did not resolve the error is penalised even when a later fix rescues the run.
+    for a in state.get("attempts", []):
+        af = a.get("fix") or {}
+        if af.get("source") == "knowledge-exact" and af.get("signature") and not a.get("ok"):
+            try:
+                knowledge.record_outcome(af["signature"], False)
+                events.append(_ev(state, "kb", "store",
+                                  f"knowledge base: failure_count +1 for {af['signature']} (its attempt did not verify)"))
+            except Exception:  # noqa: BLE001
+                pass
     if success:
         for f in chain:
             src = f.get("source", "")
             if not f.get("signature"):
                 continue  # rules-predicted fixes have no failure signature
+            prior_errs = {a.get("error", {}).get("error_type") for a in state.get("attempts", []) if a.get("error")}
+            if "TransientError" in prior_errs:
+                events.append(_ev(state, "kb", "store",
+                                  "not learning a fix from a run that hit a transient infrastructure error "
+                                  "(recovery cannot be attributed to the fix)"))
+                continue
+            introduced = next((a for a in state.get("attempts", []) if (a.get("fix") or {}).get("signature") == f.get("signature")
+                               and (a.get("fix") or {}).get("source") == src), None)
+            if introduced is not None and not introduced.get("ok"):
+                continue  # already penalised above; do not also credit it
             try:
                 if src == "knowledge-exact":
                     knowledge.record_outcome(f["signature"], True)
@@ -313,12 +357,6 @@ def finalize(state: DeployState) -> dict:
                 events.append(_ev(state, "error", "store", f"knowledge base write failed: {type(e).__name__}: {str(e)[:200]}"))
         status = "success"
     else:
-        for f in chain:
-            if f.get("source") == "knowledge-exact":
-                try:
-                    knowledge.record_outcome(f["signature"], False)
-                except Exception:  # noqa: BLE001
-                    pass
         err = state.get("current_error") or {}
         fa, la = state.get("fix_attempts", 0), state.get("llm_attempts", 0)
         if fa >= settings.max_fix_attempts:
@@ -372,6 +410,14 @@ def _error_for_signature(state: DeployState, sig: str) -> dict | None:
 
 # --------------------------------------------------------------------------- routing
 
+_GIT_MISSING = re.compile(r"(?:^|[:\s])git: (?:command )?not found|command not found: git", re.IGNORECASE)
+
+
+def _git_binary_missing(message: str) -> bool:
+    """True only when git itself is absent (installable), not when the repo/branch/credentials are wrong."""
+    return bool(_GIT_MISSING.search(message or ""))
+
+
 def after_deploy(state: DeployState) -> str:
     return "verify" if state.get("current_error") is None else "route_failure"
 
@@ -384,10 +430,12 @@ def route_failure(state: DeployState) -> str:
     err = state.get("current_error") or {}
     if not err or state.get("fix_attempts", 0) >= settings.max_fix_attempts:
         return "finalize"
-    if err.get("error_type") in ("GitError",) and "not found" not in err.get("message", "").lower():
-        return "finalize"  # bad repo URL / branch: no fix will help
-    if err.get("error_type") == "TargetBusy":
-        return "finalize"  # not our failure to fix: another run owns the target
+    if err.get("error_type") in ("GitError",) and not _git_binary_missing(err.get("message", "")):
+        return "finalize"  # bad repo URL / branch / credentials: no fix will help
+    if err.get("error_type") in ("TargetBusy", "UnreachableTarget", "PortConflict"):
+        return "finalize"  # infrastructure, not a project defect: no fix and no LLM budget should be spent
+    if err.get("error_type") == "TransientError":
+        return "retry_transient" if state.get("transient_retries", 0) < settings.max_transient_retries else "finalize"
     tried = state.get("tried", {}).get(err["signature"], [])
     if "rules" not in tried:
         return "lookup_rules"
@@ -409,6 +457,7 @@ def build_graph():
     g.add_node("deterministic_check", deterministic_check)
     g.add_node("deploy", deploy)
     g.add_node("verify", verify)
+    g.add_node("retry_transient", retry_transient)
     g.add_node("lookup_rules", lookup_rules)
     g.add_node("lookup_knowledge", lookup_knowledge)
     g.add_node("ask_bedrock", ask_bedrock)
@@ -419,9 +468,11 @@ def build_graph():
     g.add_edge("fingerprint_target", "deterministic_check")
     g.add_edge("deterministic_check", "deploy")
     targets = {"verify": "verify", "finalize": "finalize", "lookup_rules": "lookup_rules",
-               "lookup_knowledge": "lookup_knowledge", "ask_bedrock": "ask_bedrock", "deploy": "deploy"}
+               "lookup_knowledge": "lookup_knowledge", "ask_bedrock": "ask_bedrock", "deploy": "deploy",
+               "retry_transient": "retry_transient"}
     g.add_conditional_edges("deploy", lambda s: after_deploy(s) if after_deploy(s) == "verify" else route_failure(s), targets)
     g.add_conditional_edges("verify", lambda s: "finalize" if s.get("deploy_success") else route_failure(s), targets)
+    g.add_edge("retry_transient", "deploy")
     g.add_conditional_edges("lookup_rules", after_lookup, targets)
     g.add_conditional_edges("lookup_knowledge", after_lookup, targets)
     g.add_conditional_edges("ask_bedrock", after_lookup, targets)

@@ -25,6 +25,16 @@ class ErrorInfo:
         return asdict(self)
 
 
+# Transient infrastructure failures. These are NOT defects in the project and must never be "learned":
+# a retry is the remedy, and crediting whatever fix happened to precede the recovery poisons the knowledge base.
+TRANSIENT = re.compile(
+    r"ReadTimeoutError|ConnectTimeoutError|NewConnectionError|temporary failure in name resolution|"
+    r"connection broken by|connection reset by peer|TLS/SSL connection has been closed|"
+    r"503 Server Error|502 Server Error|429 Too Many Requests|Temporary failure resolving|"
+    r"network is unreachable|Could not resolve host",
+    re.IGNORECASE,
+)
+
 _PATTERNS: list[tuple[str, str, int | None]] = [
     # (error_type, regex, group index of package name or None)
     ("BuildError", r"pg_config executable not found", None),
@@ -38,6 +48,8 @@ _PATTERNS: list[tuple[str, str, int | None]] = [
     ("SyntaxError", r"SyntaxError: ([^\n]+)", None),
     ("GitError", r"fatal: ([^\n]+)", None),
     ("RuntimeMissing", r"python3: (?:command )?not found", None),
+    ("UnreachableTarget", r"is not running \(|InvalidInstanceId|No such object|Instances not in a valid state|not connected to Systems Manager", None),
+    ("PortConflict", r"PortBusy: [^\n]+", None),
     ("StartError", r"Address already in use", None),
     ("HealthCheckError", r"__HEALTH__=FAIL", None),
     ("PermissionError", r"Permission denied", None),
@@ -63,6 +75,12 @@ def _clean_pkg(name: str) -> str:
 def classify(stdout: str, stderr: str, stage: str, deps: list[dict] | None = None) -> ErrorInfo:
     text = f"{stdout}\n{stderr}"
     info = ErrorInfo(error_type="UnknownError", stage=stage)
+    m = TRANSIENT.search(text)
+    if m:
+        info.error_type = "TransientError"
+        info.message = m.group(0)[:500]
+        info.normalized = normalize(info.message)
+        return info
     for etype, pattern, grp in _PATTERNS:
         m = re.search(pattern, text)
         if m:
@@ -78,9 +96,18 @@ def classify(stdout: str, stderr: str, stage: str, deps: list[dict] | None = Non
                  if l.strip() and not (l.startswith("__") and "__=" in l) and not l.startswith("__")]
         info.message = (lines[-1] if lines else f"{stage} failed")[:500]
 
-    # package version: prefer pip's "Collecting pkg==x" line, else the declared specifier
+    # Package version. Read it from the failure text first: the manifest scan is an orchestrator-side
+    # capability, and letting it decide the version would make the SAME error hash differently depending on
+    # whether the orchestrator could reach the repo, fragmenting the knowledge base.
     if info.package:
-        m = re.search(rf"Collecting {re.escape(info.package)}(?:\[[^\]]*\])?\s*([=<>!~]+[\w.*,<>=!~ ]+)", text, re.IGNORECASE)
+        pkg = re.escape(info.package)
+        m = None
+        for pat in (rf"Collecting {pkg}(?:\[[^\]]*\])?\s*([=<>!~]+[\w.*,<>=!~]+)",
+                    rf"requirement {pkg}(?:\[[^\]]*\])?\s*([=<>!~]+[\w.*,<>=!~]+)",
+                    rf"\b{pkg}(?:\[[^\]]*\])?(==[\w.*]+)"):
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                break
         if m:
             info.package_version = m.group(1).strip()
         elif deps:

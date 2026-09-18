@@ -27,6 +27,7 @@ class Settings:
     ssm_timeout_seconds: int = int(os.getenv("SSM_TIMEOUT_SECONDS", "900"))
     max_fix_attempts: int = int(os.getenv("MAX_FIX_ATTEMPTS", "3"))
     max_llm_attempts: int = int(os.getenv("MAX_LLM_ATTEMPTS", "1"))
+    max_transient_retries: int = int(os.getenv("MAX_TRANSIENT_RETRIES", "1"))
     preempt_predicted_fixes: bool = _bool(os.getenv("PREEMPT_PREDICTED_FIXES"), True)
     # Backends. AWS is the default; "local" mode needs no AWS account at all.
     executor: str = os.getenv("EXECUTOR", "ssm")            # ssm | docker

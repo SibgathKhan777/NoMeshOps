@@ -1,0 +1,358 @@
+[
+  {
+    "scenario": "clean project installs first try",
+    "pass": true,
+    "duration_s": 22.3,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "attempts": [
+        true,
+        1
+      ],
+      "fix_sources": [
+        true,
+        []
+      ],
+      "llm_calls": [
+        true,
+        0
+      ]
+    },
+    "failure_reason": null,
+    "events_tail": [
+      "verifying: import check -> start `python -m uvicorn app:app --host 127.0.0.1 --port 8000` -> GET :8000/health",
+      "import ok (3 packages) \u00b7 app started \u00b7 health 200 '{\"ok\":true,\"python\":\"3.10.12\",\"numpy\":\"2.2.6\"}' (4.08s)",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200141Z-nomeshops-ubuntu22-58116fd6.json",
+      "DEPLOY VERIFIED in 22.08s (1 attempt(s), 0 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "typo dep: knowledge-base hit (exact, seeded)",
+    "pass": true,
+    "duration_s": 32.0,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "attempts": [
+        true,
+        2
+      ],
+      "fix_sources": [
+        true,
+        [
+          "knowledge-exact"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        0
+      ]
+    },
+    "failure_reason": null,
+    "events_tail": [
+      "import ok (4 packages) \u00b7 app started \u00b7 health 200 '{\"ok\":true,\"python\":\"3.10.12\",\"numpy\":\"2.2.6\"}' (4.2s)",
+      "knowledge base: success_count +1 for 44ed471b492e719f2437",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200213Z-nomeshops-ubuntu22-0c51a615.json",
+      "DEPLOY VERIFIED in 31.76s (2 attempt(s), 1 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "typo dep on AL2023: family match from ubuntu fix",
+    "pass": true,
+    "duration_s": 37.3,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "attempts": [
+        true,
+        2
+      ],
+      "fix_sources": [
+        true,
+        [
+          "knowledge-family"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        0
+      ]
+    },
+    "failure_reason": null,
+    "events_tail": [
+      "import ok (4 packages) \u00b7 app started \u00b7 health 200 '{\"ok\":true,\"python\":\"3.9.25\",\"numpy\":\"2.0.2\"}' (4.28s)",
+      "stored verified fix in local knowledge base: d8becb2ae22bb9c9ea24 <- knowledge-family (sed -i 's/reqests==2.31.0/requests==2.31.0/' requirements.txt)",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200251Z-nomeshops-al2023-1c8ab284.json",
+      "DEPLOY VERIFIED in 37.12s (2 attempt(s), 1 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "psycopg2 source build, preempt on: rules predict + pre-install libpq",
+    "pass": true,
+    "duration_s": 70.7,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "attempts": [
+        true,
+        1
+      ],
+      "fix_sources": [
+        true,
+        []
+      ],
+      "llm_calls": [
+        true,
+        0
+      ],
+      "predicted_rules": [
+        true,
+        [
+          "system-dependency"
+        ]
+      ]
+    },
+    "failure_reason": null,
+    "events_tail": [
+      "verifying: import check -> start `python -m uvicorn app:app --host 127.0.0.1 --port 8000` -> GET :8000/health",
+      "import ok (4 packages) \u00b7 app started \u00b7 health 200 '{\"ok\":true,\"python\":\"3.10.12\",\"psycopg2\":\"2.9.9\"}' (4.86s)",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200401Z-nomeshops-ubuntu22-c2a5df89.json",
+      "DEPLOY VERIFIED in 70.28s (1 attempt(s), 0 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "pyproject-only manifest",
+    "pass": true,
+    "duration_s": 44.8,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "attempts": [
+        true,
+        1
+      ],
+      "fix_sources": [
+        true,
+        []
+      ],
+      "llm_calls": [
+        true,
+        0
+      ]
+    },
+    "failure_reason": null,
+    "events_tail": [
+      "verifying: import check -> start `python -m uvicorn app:app --host 127.0.0.1 --port 8000` -> GET :8000/health",
+      "import ok (3 packages) \u00b7 app started \u00b7 health 200 '{\"ok\":true,\"python\":\"3.10.12\",\"numpy\":\"2.2.6\"}' (4.21s)",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200446Z-nomeshops-ubuntu22-8f6c4bfe.json",
+      "DEPLOY VERIFIED in 44.52s (1 attempt(s), 0 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "flask app: start command auto-detected",
+    "pass": true,
+    "duration_s": 14.4,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "attempts": [
+        true,
+        1
+      ],
+      "fix_sources": [
+        true,
+        []
+      ],
+      "llm_calls": [
+        true,
+        0
+      ],
+      "start_command": [
+        true,
+        "python -m flask --app app run --host 127.0.0.1 --port 8000"
+      ]
+    },
+    "failure_reason": null,
+    "events_tail": [
+      "verifying: import check -> start `python -m flask --app app run --host 127.0.0.1 --port 8000` -> GET :8000/health",
+      "import ok (1 packages) \u00b7 app started \u00b7 health 200 '{\"framework\":\"flask\",\"ok\":true}' (3.82s)",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200501Z-nomeshops-ubuntu22-e008197f.json",
+      "DEPLOY VERIFIED in 14.24s (1 attempt(s), 0 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "app crashes at startup: verification catches it, clean failure",
+    "pass": true,
+    "duration_s": 21.0,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "final_status": [
+        true,
+        "failed"
+      ],
+      "failure_stage": [
+        true,
+        "start"
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled",
+    "events_tail": [
+      "LLM call failed: RuntimeError: LLM_BACKEND=none: LLM fallback is disabled for this run",
+      "no fix found: rules miss, knowledge miss, LLM fallback disabled",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200522Z-nomeshops-ubuntu22-93d05611.json",
+      "DEPLOY FAILED in 20.79s (1 attempt(s), 0 fix(es), 1 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "undeclared runtime import: import gate catches it",
+    "pass": true,
+    "duration_s": 72.8,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "final_status": [
+        true,
+        "failed"
+      ],
+      "failure_stage": [
+        true,
+        "start"
+      ],
+      "error_type": [
+        true,
+        "ImportError"
+      ],
+      "error_package": [
+        true,
+        "yaml"
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled",
+    "events_tail": [
+      "LLM call failed: RuntimeError: LLM_BACKEND=none: LLM fallback is disabled for this run",
+      "no fix found: rules miss, knowledge miss, LLM fallback disabled",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200634Z-nomeshops-ubuntu22-93a5c119.json",
+      "DEPLOY FAILED in 72.17s (1 attempt(s), 0 fix(es), 1 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "wrong health path on a good app",
+    "pass": true,
+    "duration_s": 79.0,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "final_status": [
+        true,
+        "failed"
+      ],
+      "failure_stage": [
+        true,
+        "health"
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled",
+    "events_tail": [
+      "LLM call failed: RuntimeError: LLM_BACKEND=none: LLM fallback is disabled for this run",
+      "no fix found: rules miss, knowledge miss, LLM fallback disabled",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200753Z-nomeshops-ubuntu22-4c7b7d83.json",
+      "DEPLOY FAILED in 78.77s (1 attempt(s), 0 fix(es), 1 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "bad repo URL: unrecoverable, no fix ladder",
+    "pass": true,
+    "duration_s": 3.1,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "attempts": [
+        true,
+        1
+      ],
+      "llm_calls": [
+        true,
+        0
+      ],
+      "final_status": [
+        true,
+        "failed"
+      ],
+      "error_type": [
+        true,
+        "GitError"
+      ]
+    },
+    "failure_reason": "unrecoverable: GitError at clone: fatal: could not read Username for 'https://github.com': No such device or address",
+    "events_tail": [
+      "error signature 8d2324c6f66435d4252a (family 6976596319f0c28de3f6)",
+      "unrecoverable: GitError at clone: fatal: could not read Username for 'https://github.com': No such device or address",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200757Z-nomeshops-ubuntu22-ef44ec01.json",
+      "DEPLOY FAILED in 2.86s (1 attempt(s), 0 fix(es), 0 LLM call(s))"
+    ]
+  },
+  {
+    "scenario": "nonexistent target: graceful failure",
+    "pass": true,
+    "duration_s": 1.4,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        0
+      ],
+      "final_status": [
+        true,
+        "failed"
+      ],
+      "error_type": [
+        true,
+        "UnreachableTarget"
+      ]
+    },
+    "failure_reason": "unrecoverable: UnreachableTarget at install: is not running (",
+    "events_tail": [
+      "error signature e2c13b048c46f633539d (family 2c369810e690f729e957)",
+      "unrecoverable: UnreachableTarget at install: is not running (",
+      "attempt log written to .nomeshops-eval/attempts/20260918T200758Z-nomeshops-nope-b8cf1aff.json",
+      "DEPLOY FAILED in 1.36s (1 attempt(s), 0 fix(es), 0 LLM call(s))"
+    ]
+  }
+]

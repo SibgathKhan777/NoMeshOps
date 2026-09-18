@@ -9,3 +9,7 @@ dist/
 .DS_Store
 attempts/
 .nomeshops/
+.nomeshops-eval/
+.nomeshops-graph-eval/
+.nomeshops-poison-eval/
+evals/results_e2e_local.log

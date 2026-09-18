@@ -29,8 +29,18 @@ Execution contract for fix_command (do not violate it):
 - Never use destructive commands (rm -rf on system paths, mkfs, dd, shutdown). Never curl|sh.
 """
 
+# A deny-list is a backstop, not a sandbox: the real containment is that fixes run on a disposable target.
+# `(?:-{1,2}[\w-]+\s+)*` tolerates interleaved flags, so `rm -rf --no-preserve-root /` cannot slip past a
+# rule written to catch `rm -rf /`.
+_RM = r"rm\s+(?:-{1,2}[\w-]+\s+)*"
 DENY = re.compile(
-    r"rm\s+-rf\s+/(?!\S)|rm\s+-rf\s+/(bin|boot|dev|etc|lib|proc|root|sbin|sys|usr|var)\b|mkfs|\bdd\s+if=|shutdown|reboot|:\(\)\s*\{|>\s*/dev/sd|curl[^|]*\|\s*(ba)?sh|wget[^|]*\|\s*(ba)?sh",
+    rf"{_RM}/(?!\S)|"
+    rf"{_RM}/(bin|boot|dev|etc|home|lib|proc|root|sbin|sys|usr|var)\b|"
+    rf"{_RM}(\$HOME|~)(/\s*)?(?!\S)|"
+    r"mkfs|\bdd\s+if=|shutdown|reboot|halt\b|:\(\)\s*\{|>\s*/dev/(sd|nvme|xvd)|"
+    r"chmod\s+(-{1,2}[\w-]+\s+)*[0-7]*777\s+/(?!\S)|chown\s+(-{1,2}[\w-]+\s+)*\S+\s+/(?!\S)|"
+    r"crontab\s+-r|\buserdel\b|\bhistory\s+-c\b|"
+    r"curl[^|]*\|\s*(ba)?sh|wget[^|]*\|\s*(ba)?sh",
     re.IGNORECASE,
 )
 

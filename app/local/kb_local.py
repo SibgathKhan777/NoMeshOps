@@ -55,6 +55,21 @@ def put_fix(error: dict, fingerprint: dict, fix_command: str, description: str, 
         "fix_command": fix_command, "description": description, "source": source,
         "success_count": 1, "failure_count": 0, "first_seen_at": _now(), "last_verified_at": _now(),
     }
+    existing = None
+    try:
+        existing = get_fix(error["signature"])
+    except Exception:  # noqa: BLE001
+        existing = None
+    if existing:
+        # Never discard history on re-learn: keep first_seen_at and the failure tally, and remember what
+        # this fix replaced. A plain overwrite would silently reset the counters the KB is judged on.
+        item["first_seen_at"] = existing.get("first_seen_at", item["first_seen_at"])
+        item["failure_count"] = int(existing.get("failure_count", 0))
+        if existing.get("fix_command") == fix_command:
+            item["success_count"] = int(existing.get("success_count", 0)) + 1
+        else:
+            item["superseded_fix"] = existing.get("fix_command", "")
+            item["superseded_at"] = _now()
     with _lock:
         items = _load(); items[error["signature"]] = item; _save(items)
     return item

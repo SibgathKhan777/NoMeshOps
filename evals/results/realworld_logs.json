@@ -1,0 +1,63 @@
+{
+  "n": 3,
+  "type_accuracy": 1.0,
+  "package_accuracy": 1.0,
+  "rule_routing_accuracy": 1.0,
+  "fix_correct": 1.0,
+  "rows": [
+    {
+      "case": "psycopg2#451",
+      "source": "https://github.com/psycopg/psycopg2/issues/451",
+      "expected_type": "BuildError",
+      "actual_type": "BuildError",
+      "expected_pkg": "psycopg2",
+      "actual_pkg": "psycopg2",
+      "actual_version": "",
+      "expected_rule": "pg_config-missing",
+      "actual_rule": "pg_config-missing",
+      "fix": "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get instal",
+      "signature": "dac18da8ff1a39709c6b",
+      "message": "pg_config executable not found",
+      "type_ok": true,
+      "pkg_ok": true,
+      "rule_ok": true,
+      "fix_ok": true
+    },
+    {
+      "case": "ml-agents#6008",
+      "source": "https://github.com/Unity-Technologies/ml-agents/issues/6008",
+      "expected_type": "BuildError",
+      "actual_type": "BuildError",
+      "expected_pkg": "numpy",
+      "actual_pkg": "numpy",
+      "actual_version": "<2.0,>=1.13.3",
+      "expected_rule": null,
+      "actual_rule": null,
+      "fix": null,
+      "signature": "7931e3fc3817188dcb5a",
+      "message": "Failed to build numpy",
+      "type_ok": true,
+      "pkg_ok": true,
+      "rule_ok": true,
+      "fix_ok": true
+    },
+    {
+      "case": "mysqlclient#756",
+      "source": "https://github.com/PyMySQL/mysqlclient/discussions/756",
+      "expected_type": "BuildError",
+      "actual_type": "BuildError",
+      "expected_pkg": "mysqlclient",
+      "actual_pkg": "mysqlclient",
+      "actual_version": "",
+      "expected_rule": "python-headers-missing",
+      "actual_rule": "python-headers-missing",
+      "fix": "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get instal",
+      "signature": "eccb37dd0592824cfc09",
+      "message": "Failed to build mysqlclient",
+      "type_ok": true,
+      "pkg_ok": true,
+      "rule_ok": true,
+      "fix_ok": true
+    }
+  ]
+}

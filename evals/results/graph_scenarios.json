@@ -1,0 +1,262 @@
+[
+  {
+    "scenario": "rules fix resolves on retry",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "fix_sources": [
+        true,
+        [
+          "rules"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        0
+      ],
+      "kb_stored": [
+        true,
+        1
+      ]
+    },
+    "failure_reason": ""
+  },
+  {
+    "scenario": "rules fix does not help -> KB -> Bedrock, then success",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "fix_sources": [
+        true,
+        [
+          "rules",
+          "bedrock"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "kb_stored": [
+        true,
+        1
+      ]
+    },
+    "failure_reason": ""
+  },
+  {
+    "scenario": "fix changes the error: new signature gets its own ladder",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "fix_sources": [
+        true,
+        [
+          "bedrock",
+          "rules"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "attempts_bounded": [
+        true,
+        3
+      ]
+    },
+    "failure_reason": ""
+  },
+  {
+    "scenario": "(limitation) second novel error cannot get LLM help: MAX_LLM_ATTEMPTS is per run",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "attempts": [
+        true,
+        2
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled"
+  },
+  {
+    "scenario": "verify import failure after install ok -> fix ladder -> success",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "fix_sources": [
+        true,
+        [
+          "bedrock"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "stage_seen": [
+        true,
+        [
+          "import",
+          null
+        ]
+      ]
+    },
+    "failure_reason": ""
+  },
+  {
+    "scenario": "app crashes at start, no fix known, LLM proposes nothing useful",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "kb_stored": [
+        true,
+        0
+      ],
+      "attempts": [
+        true,
+        2
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled"
+  },
+  {
+    "scenario": "KB exact hit fails verification -> failure_count, then Bedrock",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "fix_sources": [
+        true,
+        [
+          "knowledge-exact",
+          "bedrock"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "kb_failure_recorded": [
+        true,
+        [
+          [
+            1,
+            "bogus fix"
+          ]
+        ]
+      ]
+    },
+    "failure_reason": ""
+  },
+  {
+    "scenario": "stop condition: MAX_FIX_ATTEMPTS bounds a never-ending loop",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls_bounded": [
+        true,
+        1
+      ],
+      "attempts_bounded": [
+        true,
+        2
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled"
+  },
+  {
+    "scenario": "unfixable error type: no ladder for bad repo",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        0
+      ],
+      "attempts": [
+        true,
+        1
+      ]
+    },
+    "failure_reason": "unrecoverable: GitError at install: fatal: repository 'https://x/y.git/' not found"
+  },
+  {
+    "scenario": "git 'not found' (binary missing) IS fixable via rules",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        true
+      ],
+      "fix_sources": [
+        true,
+        [
+          "rules"
+        ]
+      ],
+      "llm_calls": [
+        true,
+        0
+      ]
+    },
+    "failure_reason": ""
+  },
+  {
+    "scenario": "LLM proposes a destructive command -> rejected, clean failure",
+    "pass": true,
+    "checks": {
+      "success": [
+        true,
+        false
+      ],
+      "llm_calls": [
+        true,
+        1
+      ],
+      "kb_stored": [
+        true,
+        0
+      ],
+      "dangerous_never_ran": [
+        true,
+        null
+      ]
+    },
+    "failure_reason": "no fix found: rules miss, knowledge miss, LLM fallback disabled"
+  }
+]
