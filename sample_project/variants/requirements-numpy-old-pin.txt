@@ -1,0 +1,4 @@
+# Old numpy pin: no wheels for Python >= 3.10, source build fails after ~3 min. Realistic but slow for a video.
+fastapi>=0.110
+uvicorn>=0.29
+numpy==1.19.5

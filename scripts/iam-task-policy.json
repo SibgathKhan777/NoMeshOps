@@ -1,0 +1,45 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SsmRunCommandOnTaggedTargets",
+      "Effect": "Allow",
+      "Action": ["ssm:SendCommand"],
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:ssm:*::document/AWS-RunShellScript"
+      ],
+      "Condition": {"StringEquals": {"aws:ResourceTag/nomeshops": "target"}}
+    },
+    {
+      "Sid": "SsmRunCommandDocument",
+      "Effect": "Allow",
+      "Action": ["ssm:SendCommand"],
+      "Resource": "arn:aws:ssm:*::document/AWS-RunShellScript"
+    },
+    {
+      "Sid": "SsmReadResults",
+      "Effect": "Allow",
+      "Action": ["ssm:GetCommandInvocation", "ssm:ListCommands", "ssm:ListCommandInvocations"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "FixesTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:Scan"],
+      "Resource": ["arn:aws:dynamodb:*:*:table/deployment_fixes", "arn:aws:dynamodb:*:*:table/deployment_fixes/index/*"]
+    },
+    {
+      "Sid": "LogsBucket",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::LOGS_BUCKET_PLACEHOLDER", "arn:aws:s3:::LOGS_BUCKET_PLACEHOLDER/*"]
+    },
+    {
+      "Sid": "Bedrock",
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:Converse", "bedrock:ConverseStream"],
+      "Resource": "*"
+    }
+  ]
+}

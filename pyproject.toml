@@ -1,0 +1,27 @@
+[project]
+name = "nomeshops"
+version = "0.1.0"
+description = "Self-healing deployment agent: fingerprint -> deploy -> deterministic rules -> knowledge base -> Bedrock -> verify -> remember"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "langgraph>=0.2.60",
+    "boto3>=1.35",
+    "pydantic>=2.7",
+    "packaging>=24.0",
+    "rich>=13.7",
+    "typer>=0.12",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "botocore[crt]>=1.35",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+packages = ["app", "app.nodes", "app.aws", "cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

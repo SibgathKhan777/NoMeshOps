@@ -1,0 +1,6 @@
+# Copy over requirements.txt to demo the DETERMINISTIC path: psycopg2 builds from source and needs libpq headers.
+# The rules table predicts it before deploying (or fixes it after the first failure with preempt disabled).
+fastapi>=0.110
+uvicorn>=0.29
+numpy>=1.24
+psycopg2==2.9.9

@@ -1,0 +1,5 @@
+# Copy over requirements.txt for a second "novel" error class: a misspelled package -> ResolutionError -> Bedrock.
+fastapi>=0.110
+uvicorn>=0.29
+numpy>=1.24
+reqests==2.31.0
