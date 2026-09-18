@@ -74,15 +74,23 @@ FAILURE (stage={error.get('stage')}, type={error.get('error_type')}, package={er
 {hint_txt}
 Return the JSON object now."""
 
-    br = client("bedrock-runtime")
-    resp = br.converse(
-        modelId=settings.bedrock_model_id,
-        system=[{"text": SYSTEM_PROMPT}],
-        messages=[{"role": "user", "content": [{"text": user}]}],
-        inferenceConfig={"maxTokens": 800, "temperature": 0.2},
-    )
-    text = "".join(c.get("text", "") for c in resp["output"]["message"]["content"])
-    usage = resp.get("usage", {})
+    if settings.llm_backend == "none":
+        raise RuntimeError("LLM_BACKEND=none: LLM fallback is disabled for this run")
+    if settings.llm_backend == "anthropic":
+        from app.local.llm_anthropic import converse
+        text, usage = converse(SYSTEM_PROMPT, user)
+        model_id = settings.anthropic_model
+    else:
+        br = client("bedrock-runtime")
+        resp = br.converse(
+            modelId=settings.bedrock_model_id,
+            system=[{"text": SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": [{"text": user}]}],
+            inferenceConfig={"maxTokens": 800, "temperature": 0.2},
+        )
+        text = "".join(c.get("text", "") for c in resp["output"]["message"]["content"])
+        usage = resp.get("usage", {})
+        model_id = settings.bedrock_model_id
     data = _extract_json(text)
     cmd = str(data.get("fix_command", "")).strip()
     if not cmd:
@@ -91,13 +99,13 @@ Return the JSON object now."""
         raise ValueError(f"model proposed a command blocked by the safety filter: {cmd!r}")
     stage = "pre" if str(data.get("stage", "post")).lower() == "pre" else "post"
     return {
-        "source": "bedrock",
+        "source": "bedrock" if settings.llm_backend == "bedrock" else f"llm-{settings.llm_backend}",
         "fix_command": cmd,
         "stage": stage,
         "description": str(data.get("description", ""))[:300],
         "confidence": float(data.get("confidence", 0) or 0),
         "rationale": str(data.get("rationale", ""))[:600],
-        "model_id": settings.bedrock_model_id,
+        "model_id": model_id,
         "input_tokens": usage.get("inputTokens"),
         "output_tokens": usage.get("outputTokens"),
     }

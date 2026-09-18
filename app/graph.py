@@ -85,7 +85,7 @@ def fingerprint_target(state: DeployState) -> dict:
                   f"{iid}: {d['os_pretty'] or d['os']} {d['arch']} python={d['python_version'] or 'MISSING'} "
                   f"pip={'yes' if d['has_pip'] else 'no'} venv={'yes' if d['has_venv'] else 'no'} "
                   f"git={'yes' if d['has_git'] else 'no'} gcc={'yes' if d['has_gcc'] else 'no'} "
-                  f"pkg={d['package_manager'] or '?'} ({raw['duration_s']}s via SSM)")]
+                  f"pkg={d['package_manager'] or '?'} ({raw['duration_s']}s via {'docker' if settings.executor == 'docker' else 'SSM'})")]
     if raw["status"] != "Success":
         events.append(_ev(state, "error", "fingerprint", f"SSM {raw['status']}: {raw['stderr'][:200]}"))
     return {"fingerprint": d, "events": events}
@@ -129,11 +129,22 @@ def deploy(state: DeployState) -> dict:
     n = len(state.get("attempts", [])) + 1
     events.append(_ev(state, "info", "deploy", f"attempt {n}: clone + venv + install on {req['instance_id']}"))
     res = deploy_attempt(req["repo_url"], req.get("branch"), req["instance_id"], state["run_id"], pre, post)
+    fingerprint = state["fingerprint"]
+    if pre and n == 1:
+        # pre-stage fixes may have installed python/git: refresh the fingerprint so signatures carry the real runtime
+        try:
+            fp2, _ = fingerprint_instance(req["instance_id"])
+            fingerprint = fp2.to_dict()
+            events.append(_ev(state, "info", "fingerprint",
+                              f"re-fingerprinted after bootstrap: python={fingerprint['python_version'] or 'MISSING'} "
+                              f"git={'yes' if fingerprint['has_git'] else 'no'} pip={'yes' if fingerprint['has_pip'] else 'no'}"))
+        except Exception as e:  # noqa: BLE001
+            events.append(_ev(state, "warn", "fingerprint", f"re-fingerprint failed: {type(e).__name__}: {str(e)[:120]}"))
     attempt = {"n": n, "fix": fix, "stage": "install", "result": res["result"], "ok": res["ok"],
                "duration_s": res["duration_s"], "command_id": res["command_id"], "exit_code": res["exit_code"],
                "output_tail": (res["stdout"] + "\n" + res["stderr"])[-3000:]}
     attempts = list(state.get("attempts", [])) + [attempt]
-    out = {"attempts": attempts, "fix_chain": chain, "current_fix": None,
+    out = {"attempts": attempts, "fix_chain": chain, "current_fix": None, "fingerprint": fingerprint,
            "fix_attempts": state.get("fix_attempts", 0) + (1 if fix else 0), "events": events}
     if res["ok"]:
         events.append(_ev(state, "success", "deploy", f"install ok in {res['duration_s']}s"))
@@ -142,7 +153,7 @@ def deploy(state: DeployState) -> dict:
     output = res["stdout"] + "\n" + res["stderr"]
     err = signature.classify(res["stdout"], res["stderr"], res.get("failed_stage") or "install",
                              state["scan"].get("dependencies"))
-    err = signature.compute_signature(err, state["fingerprint"]).to_dict()
+    err = signature.compute_signature(err, fingerprint).to_dict()
     events.append(_ev(state, "error", "deploy",
                       f"attempt {n} failed at {err['stage']} ({res['result']}, {res['duration_s']}s): "
                       f"{err['error_type']} {err['package'] + err['package_version'] + ' ' if err['package'] else ''}"
@@ -249,18 +260,18 @@ def ask_bedrock(state: DeployState) -> dict:
     for f in state.get("fix_chain", []):
         if f.get("source") == "knowledge-family" and f.get("signature") == err["signature"]:
             hint = {"os": f.get("from_platform"), "python_version": "", "fix_command": f["fix_command"]}
-    events = [_ev(state, "llm", "bedrock", f"novel error -> asking Bedrock ({settings.bedrock_model_id}) for one fix…")]
+    events = [_ev(state, "llm", "bedrock", f"novel error -> asking {settings.llm_label} for one fix…")]
     t0 = time.perf_counter()
     try:
         prop = propose_fix(state["fingerprint"], state["scan"], err, state.get("last_output", ""),
                            state.get("attempts", []), hint)
     except Exception as e:  # noqa: BLE001
-        events.append(_ev(state, "error", "bedrock", f"Bedrock call failed: {type(e).__name__}: {str(e)[:300]}"))
+        events.append(_ev(state, "error", "bedrock", f"LLM call failed: {type(e).__name__}: {str(e)[:300]}"))
         return {"tried": tried, "current_fix": None, "llm_attempts": state.get("llm_attempts", 0) + 1, "events": events}
     secs = time.perf_counter() - t0
     fix = {"signature": err["signature"], **prop}
     events.append(_ev(state, "llm", "bedrock",
-                      f"Bedrock proposed (confidence {prop['confidence']:.2f}, {secs:.1f}s, "
+                      f"{'Bedrock' if settings.llm_backend == 'bedrock' else settings.llm_backend} proposed (confidence {prop['confidence']:.2f}, {secs:.1f}s, "
                       f"{prop.get('input_tokens')}/{prop.get('output_tokens')} tokens): {prop['description']}"))
     events.append(_ev(state, "llm", "bedrock", f"  rationale: {prop['rationale']}"))
     return {"tried": tried, "current_fix": fix, "llm_attempts": state.get("llm_attempts", 0) + 1, "events": events}
@@ -289,9 +300,9 @@ def finalize(state: DeployState) -> dict:
                     knowledge.put_fix(err, fp, f["fix_command"], f.get("description", ""), src)
                     stored = True
                     events.append(_ev(state, "kb", "store",
-                                      f"stored verified fix in DynamoDB: {f['signature']} <- {src} ({f['fix_command'][:80]})"))
+                                      f"stored verified fix in {'local knowledge base' if settings.kb_backend == 'local' else 'DynamoDB'}: {f['signature']} <- {src} ({f['fix_command'][:80]})"))
             except Exception as e:  # noqa: BLE001
-                events.append(_ev(state, "error", "store", f"DynamoDB write failed: {type(e).__name__}: {str(e)[:200]}"))
+                events.append(_ev(state, "error", "store", f"knowledge base write failed: {type(e).__name__}: {str(e)[:200]}"))
         status = "success"
     else:
         for f in chain:
@@ -305,7 +316,8 @@ def finalize(state: DeployState) -> dict:
         if fa >= settings.max_fix_attempts:
             reason = f"gave up after {fa} fix attempts (MAX_FIX_ATTEMPTS)"
         elif la >= settings.max_llm_attempts and err:
-            reason = f"no fix found: rules miss, knowledge miss, and {la} Bedrock attempt(s) did not verify"
+            reason = (f"no fix found: rules miss, knowledge miss, and {la} LLM attempt(s) did not verify"
+                      if settings.llm_backend != "none" else "no fix found: rules miss, knowledge miss, LLM fallback disabled")
         else:
             reason = f"unrecoverable: {err.get('error_type', 'error')} at {err.get('stage', '?')}: {err.get('message', '')[:200]}"
         events.append(_ev(state, "error", "finalize", reason))
@@ -323,7 +335,8 @@ def finalize(state: DeployState) -> dict:
     try:
         key = store_attempt(record)
         if key:
-            events.append(_ev(state, "info", "store", f"attempt log written to s3://{settings.logs_bucket}/{key}"))
+            dest = key if settings.store_backend == "local" else f"s3://{settings.logs_bucket}/{key}"
+            events.append(_ev(state, "info", "store", f"attempt log written to {dest}"))
     except Exception as e:  # noqa: BLE001
         events.append(_ev(state, "error", "store", f"S3 write failed: {type(e).__name__}: {str(e)[:200]}"))
     events.append(_ev(state, "success" if success else "error", "finalize",

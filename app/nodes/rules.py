@@ -134,7 +134,6 @@ def check_compatibility(scan: dict, fingerprint: dict) -> list[PredictedIssue]:
             message="python3 is not installed on the target",
             fix_command=fix, fix_description="Install python3 with the system package manager",
         ))
-        return issues
 
     # 1b. git present? (clone happens before anything else)
     if not fingerprint.get("has_git"):
@@ -146,7 +145,7 @@ def check_compatibility(scan: dict, fingerprint: dict) -> list[PredictedIssue]:
 
     # 2. requires-python vs installed python
     req = scan.get("python_requires") or ""
-    if req:
+    if req and py:
         try:
             if not SpecifierSet(req).contains(Version(py), prereleases=True):
                 issues.append(PredictedIssue(
@@ -157,8 +156,8 @@ def check_compatibility(scan: dict, fingerprint: dict) -> list[PredictedIssue]:
         except (InvalidSpecifier, InvalidVersion):
             pass
 
-    # 3. pip / venv availability
-    if not fingerprint.get("has_pip") or not fingerprint.get("has_venv"):
+    # 3. pip / venv availability (covered by the python-missing fix when python itself is absent)
+    if py and (not fingerprint.get("has_pip") or not fingerprint.get("has_venv")):
         pkgs = "python3-pip python3-venv" if pm == "apt-get" else "python3-pip"
         issues.append(PredictedIssue(
             rule="pip-or-venv-missing", severity="blocker",
@@ -167,7 +166,7 @@ def check_compatibility(scan: dict, fingerprint: dict) -> list[PredictedIssue]:
         ))
 
     # 4. package minimum-python table
-    if py_minor:
+    if py and py_minor:
         for pkg, spec, min_py in PY_MIN_RULES:
             d = deps.get(pkg)
             if not d:

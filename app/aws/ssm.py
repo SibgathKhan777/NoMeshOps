@@ -39,6 +39,9 @@ def run_shell(
     own logs. If LOGS_BUCKET is set the full output is also delivered to S3 by SSM.
     """
     timeout = timeout or settings.ssm_timeout_seconds
+    if settings.executor == "docker":
+        from app.local.docker_exec import run_shell_docker
+        return run_shell_docker(instance_id, script, timeout, comment)
     ssm = client("ssm")
     kwargs = dict(
         InstanceIds=[instance_id],

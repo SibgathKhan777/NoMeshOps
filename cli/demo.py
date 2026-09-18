@@ -52,7 +52,7 @@ def _summary(final: dict) -> None:
 
 @app.command()
 def deploy(repo: str = typer.Option(..., help="git URL of the project"),
-           instance: str = typer.Option(..., help="target EC2 instance id"),
+           instance: str = typer.Option(..., help="target EC2 instance id (or docker container name with EXECUTOR=docker)"),
            branch: str = typer.Option(None), start_command: str = typer.Option(None),
            port: int = typer.Option(8000), health_path: str = typer.Option("/health"),
            keep_running: bool = typer.Option(False), preempt: bool = typer.Option(None, help="pre-apply predicted fixes"),

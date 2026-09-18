@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class DeployRequest(BaseModel):
     repo_url: str = Field(..., description="Git URL of the project to deploy")
-    instance_id: str = Field(..., description="Target EC2 instance id (SSM-managed)")
+    instance_id: str = Field(..., description="Target EC2 instance id (SSM-managed), or a docker container name in local mode")
     branch: Optional[str] = Field(None, description="Branch/tag to clone (default: repo default)")
     start_command: Optional[str] = Field(
         None,

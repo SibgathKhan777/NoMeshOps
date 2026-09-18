@@ -123,6 +123,32 @@ Built against controlled, tagged EC2 instances (`nomeshops=target`), not arbitra
 No Cognito, no web dashboard, no Step Functions, no pgvector: exact-signature DynamoDB is enough to prove
 "gets smarter with every error".
 
+## Local mode (no AWS account needed)
+
+Every backend is pluggable, so the whole loop runs on a laptop with Docker containers standing in for EC2:
+
+| concern | AWS (default) | local |
+|---|---|---|
+| running commands on the target | SSM Run Command (`EXECUTOR=ssm`) | `docker exec` into a container (`EXECUTOR=docker`) |
+| knowledge base | DynamoDB (`KB_BACKEND=dynamodb`) | `.nomeshops/fixes.json` (`KB_BACKEND=local`) |
+| audit log | S3 (`STORE_BACKEND=s3`) | `.nomeshops/attempts/` (`STORE_BACKEND=local`) |
+| fix generation | Bedrock (`LLM_BACKEND=bedrock`) | Anthropic API (`LLM_BACKEND=anthropic`, needs `ANTHROPIC_API_KEY`) or `none` |
+
+```bash
+cp .env.local.example .env
+./scripts/local_targets.sh          # ubuntu:22.04 (no python, no git) + amazonlinux:2023 containers
+.venv/bin/python -m cli.demo deploy --repo https://github.com/SibgathKhan777/nomeshops-sample.git --instance nomeshops-ubuntu22
+./scripts/local_targets.sh --stop
+```
+
+Measured locally (2026-09-19): the rules table bootstrapped python + git into the bare Ubuntu container
+(~2 min of apt), the typo failure produced **the same signature as the real EC2 runs** (`44ed471b…`), so a fix learned
+on AWS resolves locally and vice versa; with `LLM_BACKEND=none` the run fails cleanly, and after seeding the fix the
+next run hit the local knowledge base in 3 ms and verified in 50 s. The Amazon Linux container (Python 3.9) then
+produced a different exact signature, got the Ubuntu fix through the **family index** (75 ms), verified it, and stored
+it under its own signature — cross-platform knowledge transfer with verification as the gate. Scripts, signatures and
+the verification gate are identical between the two modes; only the transport differs.
+
 ## Demo runbook (measured on 2026-09-18, ap-south-1, personal account)
 
 The sample repo `https://github.com/SibgathKhan777/nomeshops-sample` now ships the fast-failing typo variant

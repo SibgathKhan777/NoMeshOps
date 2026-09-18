@@ -12,6 +12,15 @@ from app.config import settings
 FAMILY_INDEX = "family-index"
 
 
+def _local():
+    from app.local import kb_local
+    return kb_local
+
+
+def _is_local() -> bool:
+    return settings.kb_backend == "local"
+
+
 def _table():
     return session().resource("dynamodb").Table(settings.fixes_table)
 
@@ -28,12 +37,16 @@ def _plain(item: dict) -> dict:
 
 
 def get_fix(signature: str) -> dict | None:
+    if _is_local():
+        return _local().get_fix(signature)
     resp = _table().get_item(Key={"error_signature": signature})
     item = resp.get("Item")
     return _plain(item) if item else None
 
 
 def get_family_fixes(family: str) -> list[dict]:
+    if _is_local():
+        return _local().get_family_fixes(family)
     resp = _table().query(IndexName=FAMILY_INDEX, KeyConditionExpression=Key("error_family").eq(family))
     items = [_plain(i) for i in resp.get("Items", [])]
     items.sort(key=lambda i: (int(i.get("success_count", 0)) - int(i.get("failure_count", 0))), reverse=True)
@@ -41,6 +54,8 @@ def get_family_fixes(family: str) -> list[dict]:
 
 
 def put_fix(error: dict, fingerprint: dict, fix_command: str, description: str, source: str) -> dict:
+    if _is_local():
+        return _local().put_fix(error, fingerprint, fix_command, description, source)
     item = {
         "error_signature": error["signature"],
         "error_family": error.get("family", ""),
@@ -65,6 +80,8 @@ def put_fix(error: dict, fingerprint: dict, fix_command: str, description: str, 
 
 
 def record_outcome(signature: str, success: bool) -> None:
+    if _is_local():
+        return _local().record_outcome(signature, success)
     field = "success_count" if success else "failure_count"
     expr = f"ADD {field} :one SET last_verified_at = :t" if success else f"ADD {field} :one"
     values = {":one": 1}
@@ -78,9 +95,13 @@ def record_outcome(signature: str, success: bool) -> None:
 
 
 def list_fixes(limit: int = 50) -> list[dict]:
+    if _is_local():
+        return _local().list_fixes(limit)
     resp = _table().scan(Limit=limit)
     return [_plain(i) for i in resp.get("Items", [])]
 
 
 def delete_fix(signature: str) -> None:
+    if _is_local():
+        return _local().delete_fix(signature)
     _table().delete_item(Key={"error_signature": signature})
