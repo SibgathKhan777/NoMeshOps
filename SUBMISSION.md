@@ -12,7 +12,7 @@ Every fix must pass a real verification chain (install → import → the app ac
 it is stored. The same error therefore resolves near-instantly the next time it is seen, on any machine with the same
 runtime context. The system gets measurably more reliable with every error it resolves.
 
-## What we measured (real AWS, ap-south-1, 2026-09-18/19)
+## What we measured on real AWS (ap-south-1, 2026-09-18/19)
 
 | run | target | path | wall time |
 |---|---|---|---|
@@ -21,9 +21,66 @@ runtime context. The system gets measurably more reliable with every error it re
 | different platform | Amazon Linux 2023 | rules table predicted missing git/pip from the fingerprint and pre-installed them → verified first try | 58 s, 0 fixes |
 | through the deployed service | Ubuntu 22.04 (B) via ECS Express Mode `POST /deploy/stream` | knowledge hit in **45 ms** from inside AWS → verified | 29.6 s |
 
-The verification gate also earned its keep: an early run's import check used the pre-fix manifest, flagged a fix
-that had actually worked as unverified, stored nothing, and reported a clean failure. That bug was fixed; the gate
-never let a bad record into the knowledge base.
+These runs happened before the hardening described in the next section, so treat the wall times as indicative of the
+shape of the loop rather than as post-fix benchmarks. AWS resources were then torn down to stop spend; the DynamoDB
+table, S3 bucket, ECR image and IAM roles remain so a redeploy is three script runs.
+
+## How we tested it, and what that found
+
+We did not stop at "it worked in the demo". We built an adversarial evaluation harness (`evals/`) and ran the system
+against cases designed to break it. Every number below is produced by a suite in that directory.
+
+| suite | cases | result |
+|---|---|---|
+| end-to-end on real containers | 11 | 11 pass |
+| orchestration scenarios against scripted targets | 11 | 11 pass |
+| error type classification | 27 | 92.6% |
+| package attribution / version attribution | 27 | 96.3% / 100% |
+| pre-deploy rules, precision and recall | 20 | 1.00 / 1.00 |
+| post-failure rule routing | 20 | 100% |
+| requirements/pyproject parsing | 8 | 100% |
+| destructive-command filter | 24 | 16/16 dangerous blocked, 0/8 benign blocked |
+| held-out real-world pip logs | 3 | 100% |
+
+The deterministic check averages **0.18 ms** over 1000 iterations, which is what makes "rules before the model"
+free rather than merely tidy.
+
+**The evaluation found six real defects, all fixed in commit `cc79ebb`.** The most important one struck at our own
+headline claim:
+
+1. **False "verified".** The health check never proved that the process answering on the port was the one it had just
+   started. A leftover server from an earlier run answered every probe, and four end-to-end scenarios passed for the
+   wrong reason, two of which were written specifically to fail. Three faults compounded: `fuser` is absent from both
+   target images so the port-clearing line was a silent no-op, the cleanup scan matched a virtualenv path that never
+   appears in a process command line because `argv[0]` is just `python`, and nothing compared responder identity.
+   Verification now resolves port owners through `/proc/net/tcp` → `/proc/*/fd`, clears stale listeners, refuses to
+   continue if the port cannot be freed, and fails if the responder is not the process it launched.
+2. **Knowledge-base poisoning.** A pip read timeout followed by a successful retry taught the system a permanent
+   "verified fix": the network had simply recovered, and whatever ran in between took the credit. Transient
+   infrastructure failures are now a distinct class, retried unchanged, never sent to the model, never learned.
+3. **Signature fragmentation.** The package version was read only from the orchestrator's own clone of the repo, so
+   the same error on the same host hashed differently when that clone was unavailable, splitting knowledge-base rows
+   and success counters. The version is now read from pip's own output first.
+4. **History loss on re-learn.** Writing a new fix overwrote the row, resetting `failure_count` and `first_seen_at`.
+   Both backends now preserve history and record what a new fix superseded.
+5. **Model budget spent on non-defects.** A bad repository URL matched the `not found` substring intended for a
+   missing git binary, and an unreachable target ran the whole fix ladder. Both now stop immediately.
+6. **Deny-list evasion.** `rm -rf --no-preserve-root /` slipped past a rule written to catch `rm -rf /`. The matcher
+   now tolerates interleaved flags.
+
+Four of those six share one shape: **the system credited an observation it had not attributed.** A fix preceded a
+success, so the fix got the credit; a port answered, so the app was assumed healthy. That is the characteristic
+failure mode of anything that learns from its own outcomes, and it is the thing we now design against explicitly.
+
+### Does it generalise beyond our own demo?
+
+- **Across projects.** A fix learned on the sample project was applied to an unrelated project that shared only the
+  faulty dependency: exact knowledge-base hit in 1 ms, counter incremented, no duplicate row.
+- **Across platforms.** A fix learned on Ubuntu 22.04 with Python 3.10 resolved the same error class on Amazon Linux
+  2023 with Python 3.9 through the family index, with verification still acting as the gate.
+- **Across other people's logs.** Three pip failure logs copied verbatim from public issue trackers (psycopg2,
+  Unity ml-agents, mysqlclient), one of them from Windows and one from a decade-old pip output format, all produced
+  the correct error type, package and fix routing.
 
 ## AWS services used, and why
 
@@ -39,35 +96,47 @@ never let a bad record into the knowledge base.
 ## Design choices an infra reviewer will care about
 
 - **Deterministic before probabilistic.** The rules table runs in well under a millisecond, touches no network, and
-  catches the boring-but-common cases (missing git/pip/venv/compiler, requires-python mismatches, packages whose new
-  majors need a newer Python, source builds that need system headers). The LLM is the last resort, not the first.
+  caught every post-failure case it should have across 20 labelled samples. The model is the last resort, not the first.
 - **Verification is the gate, not the exit code.** A fix is only "known" after `pip install` succeeds, every declared
-  package imports, the app process starts, and the health endpoint answers. Each attempt starts from a fresh clone and
-  a fresh venv, so a verified result is a real reproduction.
+  package imports, the app process starts, the health endpoint answers, **and the process that answered is the one we
+  started.** Each attempt begins from a fresh clone and a fresh virtualenv.
 - **Runtime context is part of the error identity.** The same error text on Python 3.9 and 3.12 is not the same
-  problem; the signature encodes OS, architecture and Python minor. A family index still lets a fix travel across
+  problem, so the signature encodes OS, architecture and Python minor. A family index lets a fix travel across
   platforms, but only through the same verification gate.
-- **Hard stop conditions.** At most 3 fix attempts and 1 LLM-assisted retry per run, then a structured failure report
-  with the full attempt history. No indefinite looping.
-- **Fixes run under an explicit contract.** Stage `pre` runs before `git clone` (system bootstrap), stage `post` runs
-  after the venv exists and before `pip install` (manifest edits, pip upgrades). The model is told this contract and
-  its output is validated against a destructive-pattern deny-list.
+- **Not everything is a defect to fix.** Transient network failures, busy targets, unreachable targets and port
+  conflicts are classified as infrastructure conditions: they are retried or reported, never learned, and never
+  spend model budget.
+- **Hard stop conditions.** At most 3 fix attempts and 1 model-assisted retry per run, then a structured failure
+  report with the full attempt history. A per-target lock makes concurrent deploys on one host fail fast instead of
+  corrupting each other.
+- **Fixes run under an explicit contract.** Stage `pre` runs before `git clone` for system bootstrap; stage `post`
+  runs after the virtualenv exists and before `pip install`. Model output is validated against a destructive-pattern
+  deny-list, which is a backstop against a careless model rather than a sandbox against an adversary; the real
+  containment is that targets are disposable.
 
 ## Scope, honestly
 
 Built and tested against EC2 instances we control, tagged `nomeshops=target`, in one account. Not arbitrary customer
-infrastructure, not cross-account, no auth on the API, no dashboard. That is a deliberate MVP boundary. Deliberately
-cut, with reasons in the build plan: Cognito, Amplify, Step Functions/EventBridge, Strands, pgvector, CodeBuild
-sandboxing, CDK, Secrets Manager, Bedrock AgentCore.
+infrastructure, not cross-account, no auth on the API, no dashboard. Deliberately cut, with reasons recorded in the
+build plan: Cognito, Amplify, Step Functions/EventBridge, Strands, pgvector, CodeBuild sandboxing, CDK, Secrets
+Manager, Bedrock AgentCore.
+
+What the evaluation does **not** cover: the post-fix code has been verified in local Docker mode only, because AWS was
+torn down to stop spend, so the Bedrock path has not been re-exercised since the fixes; all targets were Linux with
+Python and pip; the sample applications are single-file web services; and three real-world logs is a small,
+directional sample. The three phase smoke tests plus `evals/` are the re-validation plan when credits arrive.
 
 ## AI coding tools used
 
-Claude Code (Claude Fable 5.1) wrote the code, the tests, the scripts and this document under the author's direction
-and review; it also drove the real-AWS runs above. Amazon Bedrock (Claude Sonnet 4.6) is the runtime model inside the
-product. All commits are co-authored accordingly.
+Claude Code wrote the implementation, the tests, the scripts, the evaluation harness and this document under the
+author's direction and review, and drove the real-AWS runs above (Claude Fable 5.1 for the build, Claude Opus 5 for
+the evaluation pass). Amazon Bedrock with Claude Sonnet 4.6 is the runtime model inside the product itself. All
+commits are co-authored accordingly.
 
 ## Running it
 
-See `README.md`: `scripts/provision.sh` → `scripts/launch_targets.sh` → `python -m cli.demo deploy …` →
-`scripts/deploy_ecs_express.sh`. Offline tests: `pytest`. A Docker-based local mode (no AWS account needed) is
-described in the README under "Local mode".
+See `README.md`. On AWS: `scripts/provision.sh` → `scripts/launch_targets.sh` → `python -m cli.demo deploy …` →
+`scripts/deploy_ecs_express.sh`. With no AWS account at all, local mode runs the identical loop against Docker
+containers: `cp .env.local.example .env && ./scripts/local_targets.sh`. Tests: `pytest` for the unit suite, and
+`evals/components.py`, `evals/graph_scenarios.py`, `evals/realworld_logs.py`, `evals/poisoning.py`,
+`evals/e2e_local.py` for the evaluation suites above.

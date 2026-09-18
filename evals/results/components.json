@@ -678,7 +678,7 @@
         "fix_commands_present": true
       }
     ],
-    "avg_check_ms_over_1000": 0.18208337400574237
+    "avg_check_ms_over_1000": 0.2063489470165223
   },
   "rules_post": {
     "n": 20,
