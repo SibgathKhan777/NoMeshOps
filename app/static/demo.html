@@ -26,16 +26,16 @@
       <div class="field grow"><label for="cb-repo">Codebase</label><input id="cb-repo" type="url" value="https://github.com/SibgathKhan777/nomeshops-sample.git"></div>
     </div>
     <div class="cb-row cb-row-opts">
-      <div class="field"><label for="cb-scenario">Recorded project</label><select id="cb-scenario">
-        <option value="typo">Misspelled dependency (unknown error → model)</option>
-        <option value="psycopg2">Database driver, source build (rules)</option>
-        <option value="clean">Healthy project</option>
-        <option value="crash">App that crashes at startup</option>
+      <div class="field"><label for="cb-scenario">Scenario</label><select id="cb-scenario">
+        <option value="typo">Typo'd dependency — unseen error, agent asks the model</option>
+        <option value="psycopg2">Compiled DB driver — known error, fixed by rules alone</option>
+        <option value="clean">Healthy project — nothing to fix</option>
+        <option value="crash">Crashes at startup — install succeeds, health check catches it</option>
       </select></div>
       <div class="field"><label for="cb-target">Target machine</label><select id="cb-target"><option>loading targets…</option></select></div>
       <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="cb-run">Scan &amp; deploy</button></div>
     </div>
-    <p class="cb-note" id="cb-note">Pick a project and a target, then press Scan &amp; deploy. The server deploys it to that machine and streams the result.</p>
+    <p class="cb-note" id="cb-note">Each scenario is a real branch of the sample repo above — picking one and pressing Scan &amp; deploy has the server clone and deploy that exact code to the chosen machine right now.</p>
     <p class="auth-quota" id="quota-line">Sign in to run the live demo &mdash; free accounts get 3 runs.</p>
   </div>
   <div class="machines">

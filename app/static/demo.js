@@ -115,7 +115,8 @@
     active=true; run.disabled=true; second.disabled=true; clear();
     var tok=NoMeshAuth.token();
     var url='/api/demo/deploy?scenario='+encodeURIComponent(scen.value)+'&target='+target+'&token='+encodeURIComponent(tok);
-    note.textContent='Deploying to '+target+' now. Streaming live from the server…';
+    var tLabel=(targetsById[target]||{}).label||target;
+    note.textContent='Deploying to '+tLabel+' now. Streaming live from the server…';
     es=new EventSource(url);
     es.addEventListener('meta',function(e){var d=JSON.parse(e.data); ln(localEl,'t-dim','$ nomeshops deploy --repo '+d.repo.replace('https://','')+' --target '+d.target); cloudSub.textContent=d.label;
       if (typeof d.demo_runs_used === 'number'){ meCache.demo_runs_used = d.demo_runs_used; meCache.demo_runs_remaining = Math.max(0, d.demo_runs_limit - d.demo_runs_used); syncGate(meCache); }
@@ -155,5 +156,5 @@
   second.addEventListener('click',function(){
     var nt=nextTarget(lastTarget); targetSel.value=nt; lastTarget=nt; deploy(nt);
   });
-  reset.addEventListener('click',function(){if(es)es.close();active=false;run.disabled=false;clear();localEl.innerHTML='<span class="ln t-dim">Waiting for a codebase…</span>';cloudEl.innerHTML='<span class="ln t-dim">Waiting for the agent…</span>';note.textContent='Pick a project and press Scan & deploy.';});
+  reset.addEventListener('click',function(){if(es)es.close();active=false;run.disabled=false;clear();localEl.innerHTML='<span class="ln t-dim">Waiting for a codebase…</span>';cloudEl.innerHTML='<span class="ln t-dim">Waiting for the agent…</span>';note.textContent='Each scenario is a real branch of the sample repo above \u2014 picking one and pressing Scan & deploy has the server clone and deploy that exact code to the chosen machine right now.';});
 })();
