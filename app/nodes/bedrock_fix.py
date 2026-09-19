@@ -18,7 +18,7 @@ Respond with ONE JSON object and nothing else:
 `git clone`; use only for system bootstrap such as installing git or python itself).
 
 Execution contract for fix_command (do not violate it):
-- Runs as root, in the freshly cloned project directory, under bash.
+- Runs as root, in the freshly cloned project directory, under POSIX sh (not bash — no arrays, no [[ ]], no bashisms; the target may be Alpine/busybox with no bash installed at all).
 - The project's virtualenv (.venv) is already created and FIRST on PATH: `pip` and `python` are the venv's.
 - It runs immediately BEFORE `pip install -r requirements.txt` (or `pip install .`). Anything you install
   with pip persists into that step; edits to requirements.txt/pyproject.toml take effect.

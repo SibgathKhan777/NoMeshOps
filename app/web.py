@@ -251,9 +251,22 @@ def session_info(request: Request):
 
 
 # --------------------------------------------------------------------------- live demo (real deploy)
+# Six target machines: the default OS image of five popular clouds/hosts, spanning three
+# package managers, so the demo proves the agent on more than just AWS. Each entry is a real
+# Docker container (scripts/local_targets.sh) or, in AWS mode, a real EC2 instance id.
 DEMO_TARGETS = {
-    "cloud-1": {"instance": "nomeshops-ubuntu22", "label": "Ubuntu 22.04 · x86_64"},
-    "cloud-2": {"instance": "nomeshops-al2023", "label": "Amazon Linux 2023 · x86_64"},
+    "aws-ubuntu":   {"instance": "nomeshops-ubuntu22",     "cloud": "AWS EC2",
+                     "label": "AWS EC2 · Ubuntu 22.04 · x86_64", "port": 8000},
+    "aws-al2023":   {"instance": "nomeshops-al2023",       "cloud": "AWS EC2",
+                     "label": "AWS EC2 · Amazon Linux 2023 · x86_64", "port": 8001},
+    "gcp-debian":   {"instance": "nomeshops-gcp-debian",   "cloud": "Google Cloud",
+                     "label": "Google Cloud · Debian 12 · x86_64", "port": 8002},
+    "azure-ubuntu": {"instance": "nomeshops-azure-ubuntu", "cloud": "Azure / DigitalOcean",
+                     "label": "Azure / DigitalOcean · Ubuntu 24.04 · x86_64", "port": 8003},
+    "rocky":        {"instance": "nomeshops-rocky",        "cloud": "Oracle Cloud / on-prem",
+                     "label": "Oracle Cloud / on-prem · Rocky Linux 9 · x86_64", "port": 8004},
+    "alpine":       {"instance": "nomeshops-alpine",       "cloud": "Fly.io / lightweight VPS",
+                     "label": "Fly.io / lightweight VPS · Alpine 3.20 · x86_64", "port": 8005},
 }
 DEMO_REPO = "https://github.com/SibgathKhan777/nomeshops-sample.git"
 DEMO_BRANCHES = {
@@ -262,7 +275,13 @@ DEMO_BRANCHES = {
     "clean": "eval-clean",
     "crash": "eval-start-crash",
 }
-DEMO_PORTS = {"cloud-1": 8000, "cloud-2": 8001}
+
+
+@router.get("/api/demo/targets")
+def demo_targets():
+    """Single source of truth for the target picker, so the UI can never drift from what the
+    server can actually reach."""
+    return {"targets": [{"id": k, **v, "port": v["port"]} for k, v in DEMO_TARGETS.items()]}
 
 
 @router.get("/api/demo/deploy")
@@ -288,9 +307,9 @@ def demo_deploy(request: Request, scenario: str = "typo", target: str = "cloud-1
     branch = DEMO_BRANCHES.get(scenario, None)
     req = {
         "repo_url": DEMO_REPO, "instance_id": tgt["instance"], "branch": branch,
-        "app_port": DEMO_PORTS.get(target, 8000), "health_path": "/health",
+        "app_port": tgt["port"], "health_path": "/health",
         "keep_running": False, "preempt_predicted_fixes": True,
-        "start_command": f"python -m uvicorn app:app --host 127.0.0.1 --port {DEMO_PORTS.get(target, 8000)}",
+        "start_command": f"python -m uvicorn app:app --host 127.0.0.1 --port {tgt['port']}",
     }
 
     def gen():

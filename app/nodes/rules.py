@@ -17,6 +17,31 @@ from packaging.version import Version, InvalidVersion
 
 # --------------------------------------------------------------------------- helpers
 
+# Bootstrap package sets differ by manager, not just "apt-get vs everyone else":
+# Alpine names its Python packages py3-*, not python3-*, and venv ships inside the python3
+# package itself there (no separate python3-venv exists), whereas Debian/Ubuntu split it out.
+PYTHON_BOOTSTRAP = {
+    "apt-get": "python3 python3-pip python3-venv",
+    "dnf": "python3 python3-pip",
+    "yum": "python3 python3-pip",
+    "apk": "python3 py3-pip",
+}
+PIP_VENV_BOOTSTRAP = {
+    "apt-get": "python3-pip python3-venv",
+    "dnf": "python3-pip",
+    "yum": "python3-pip",
+    "apk": "py3-pip",
+}
+
+
+def _python_bootstrap_pkgs(pm: str) -> str:
+    return PYTHON_BOOTSTRAP.get(pm, "python3 python3-pip")
+
+
+def _pip_venv_pkgs(pm: str) -> str:
+    return PIP_VENV_BOOTSTRAP.get(pm, "python3-pip")
+
+
 PKG_MANAGER_INSTALL = {
     "apt-get": "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq {pkgs}",
     "dnf": "dnf install -y -q {pkgs}",
@@ -128,7 +153,7 @@ def check_compatibility(scan: dict, fingerprint: dict) -> list[PredictedIssue]:
 
     # 1. Python present at all?
     if not py:
-        fix = _install_cmd(pm, "python3 python3-pip python3-venv" if pm == "apt-get" else "python3 python3-pip")
+        fix = _install_cmd(pm, _python_bootstrap_pkgs(pm))
         issues.append(PredictedIssue(
             rule="python-missing", severity="blocker",
             message="python3 is not installed on the target",
@@ -158,7 +183,7 @@ def check_compatibility(scan: dict, fingerprint: dict) -> list[PredictedIssue]:
 
     # 3. pip / venv availability (covered by the python-missing fix when python itself is absent)
     if py and (not fingerprint.get("has_pip") or not fingerprint.get("has_venv")):
-        pkgs = "python3-pip python3-venv" if pm == "apt-get" else "python3-pip"
+        pkgs = _pip_venv_pkgs(pm)
         issues.append(PredictedIssue(
             rule="pip-or-venv-missing", severity="blocker",
             message="pip or venv module missing on the target",
@@ -244,7 +269,7 @@ def match_error_rule(output: str, fingerprint: dict) -> RuleFix | None:
         if cmd:
             return RuleFix(rule="git-missing", fix_command=cmd, description="git missing on target")
     if re.search(r"No module named ['\"]?(pip|venv|ensurepip)", output) or "ensurepip is not available" in output:
-        cmd = _install_cmd(pm, "python3-pip python3-venv" if pm == "apt-get" else "python3-pip")
+        cmd = _install_cmd(pm, _pip_venv_pkgs(pm))
         if cmd:
             return RuleFix(rule="pip-or-venv-missing", fix_command=cmd, description="pip/venv missing")
     if re.search(r"ffi\.h: No such file", output):

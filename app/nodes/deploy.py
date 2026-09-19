@@ -42,7 +42,7 @@ cat > /tmp/nomeshops-fix-{stage}-{run_id}.sh <<'__NOMESHOPS_FIX__'
 set -e
 {body}
 __NOMESHOPS_FIX__
-bash /tmp/nomeshops-fix-{stage}-{run_id}.sh > "$FIXLOG" 2>&1
+sh /tmp/nomeshops-fix-{stage}-{run_id}.sh > "$FIXLOG" 2>&1
 frc=$?
 echo "__FIX_{stage.upper()}_RC__=$frc"
 echo "__FIX_LOG_BEGIN__"; tail -c 6000 "$FIXLOG"; echo; echo "__FIX_LOG_END__"

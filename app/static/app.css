@@ -40,7 +40,10 @@ nav.top a{font-size:14px; color:var(--ink-2); text-decoration:none} nav.top a:ho
 .field input,.field select{font-family:inherit;font-size:15px;color:var(--ink);background:var(--ground);border:1px solid var(--rule-strong);border-radius:7px;padding:10px 12px;width:100%}
 .field.grow{min-width:0}
 .codebase{margin-top:22px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:18px;box-shadow:var(--shadow)}
-.cb-row{display:grid;gap:12px 14px} @media(min-width:880px){.cb-row{grid-template-columns:minmax(0,1.5fr) minmax(0,1.1fr) auto;align-items:end}}
+.cb-row{display:grid;gap:12px 14px;margin-bottom:12px} .cb-row:last-of-type{margin-bottom:0}
+.cb-row-repo{grid-template-columns:1fr}
+.cb-row-opts{grid-template-columns:1fr} @media(min-width:760px){.cb-row-opts{grid-template-columns:minmax(0,1.3fr) minmax(0,1.5fr) auto;align-items:end}}
+#cb-target{max-width:100%}
 .cb-note{font-size:13px;color:var(--ink-3);margin-top:10px}
 .machines{display:grid;gap:14px;margin-top:16px} @media(min-width:920px){.machines{grid-template-columns:minmax(0,1fr) 180px minmax(0,1fr);align-items:stretch}}
 .machine{background:var(--term-bg);border:1px solid #232c35;border-radius:10px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0}

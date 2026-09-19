@@ -43,7 +43,7 @@ def test_short_password_rejected(client):
 
 
 def test_demo_requires_auth(client):
-    r = client.get("/api/demo/deploy?scenario=clean&target=cloud-1")
+    r = client.get("/api/demo/deploy?scenario=clean&target=aws-ubuntu")
     assert r.status_code == 401
 
 
@@ -55,9 +55,9 @@ def test_demo_quota_enforced(client, monkeypatch):
     monkeypatch.setattr("app.web.stream_deploy", fake_stream)
 
     for i in range(3):
-        r = client.get(f"/api/demo/deploy?scenario=clean&target=cloud-1&token={tok}")
+        r = client.get(f"/api/demo/deploy?scenario=clean&target=aws-ubuntu&token={tok}")
         assert r.status_code == 200, f"run {i+1} should be allowed"
-    r4 = client.get(f"/api/demo/deploy?scenario=clean&target=cloud-1&token={tok}")
+    r4 = client.get(f"/api/demo/deploy?scenario=clean&target=aws-ubuntu&token={tok}")
     assert r4.status_code == 403
     me = client.get("/api/auth/me", headers={"authorization": f"Bearer {tok}"})
     assert me.json() == {"email": "a@b.com", "demo_runs_used": 3, "demo_runs_limit": 3, "demo_runs_remaining": 0}

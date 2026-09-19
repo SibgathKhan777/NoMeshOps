@@ -136,7 +136,7 @@ Every backend is pluggable, so the whole loop runs on a laptop with Docker conta
 
 ```bash
 cp .env.local.example .env
-./scripts/local_targets.sh          # ubuntu:22.04 (no python, no git) + amazonlinux:2023 containers
+./scripts/local_targets.sh          # 6 targets: Ubuntu 22.04/24.04, Amazon Linux 2023, Debian 12, Rocky Linux 9, Alpine 3.20
 .venv/bin/python -m cli.demo deploy --repo https://github.com/SibgathKhan777/nomeshops-sample.git --instance nomeshops-ubuntu22
 ./scripts/local_targets.sh --stop
 ```

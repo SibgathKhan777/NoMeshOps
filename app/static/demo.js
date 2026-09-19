@@ -28,6 +28,37 @@
   var sLocal=document.getElementById('s-local'), sCloud=document.getElementById('s-cloud'), cloudSub=document.getElementById('s-cloud-sub');
   var run=document.getElementById('cb-run'), second=document.getElementById('cb-second'), reset=document.getElementById('cb-reset');
   var scen=document.getElementById('cb-scenario'), repo=document.getElementById('cb-repo'), note=document.getElementById('cb-note');
+  var targetSel=document.getElementById('cb-target');
+  var targetsById={}, targetOrder=[];
+
+  function loadTargets(){
+    fetch('/api/demo/targets').then(function(r){return r.json();}).then(function(d){
+      targetSel.innerHTML='';
+      var groups={};
+      d.targets.forEach(function(t){ targetsById[t.id]=t; targetOrder.push(t.id);
+        (groups[t.cloud]=groups[t.cloud]||[]).push(t); });
+      Object.keys(groups).forEach(function(cloud){
+        var og=document.createElement('optgroup'); og.label=cloud;
+        groups[cloud].forEach(function(t){
+          var os=t.label.split(' \u00b7 ')[1]||t.label;
+          var opt=document.createElement('option'); opt.value=t.id; opt.textContent=os;
+          og.appendChild(opt);
+        });
+        targetSel.appendChild(og);
+      });
+      if (targetOrder.length) cloudSub.textContent=targetsById[targetOrder[0]].label;
+    }).catch(function(){ targetSel.innerHTML='<option value="">could not load targets</option>'; });
+  }
+  loadTargets();
+  targetSel.addEventListener('change', function(){
+    var t=targetsById[targetSel.value];
+    if (t && sCloud.textContent==='idle') cloudSub.textContent=t.label;
+  });
+  function nextTarget(usedId){
+    if (!targetOrder.length) return usedId;
+    var i=targetOrder.indexOf(usedId);
+    return targetOrder[(i+1) % targetOrder.length];
+  }
   var outcome=document.getElementById('outcome'), ocb=document.getElementById('oc-badge'), oct=document.getElementById('oc-text'), ocn=document.getElementById('oc-note');
   var rungs={rules:q('rules'),kb:q('kb'),llm:q('llm')}, rst={rules:id('rs-rules'),kb:id('rs-kb'),llm:id('rs-llm')};
   var vmap={}; ['install','import','start','health'].forEach(function(k){vmap[k]=document.querySelector('.verify-list li[data-v="'+k+'"]');});
@@ -43,7 +74,9 @@
     localEl.textContent='';cloudEl.textContent='';
     Object.keys(rungs).forEach(function(k){rungs[k].className='rung';rst[k].textContent='—';});
     Object.keys(vmap).forEach(function(k){vmap[k].className='';});
-    setSt(sLocal,'','idle');setSt(sCloud,'','idle');cloudSub.textContent='not yet fingerprinted';outcome.hidden=true;second.hidden=true;
+    setSt(sLocal,'','idle');setSt(sCloud,'','idle');
+    var t=targetsById[targetSel.value]; cloudSub.textContent = t ? t.label : 'not yet fingerprinted';
+    outcome.hidden=true;second.hidden=true;
   }
 
   // classify an orchestrator event onto the two panels + agent widgets
@@ -95,7 +128,11 @@
       ocb.className='oc-badge mono '+(ok?'ok':'fail'); ocb.textContent=ok?'verified':'failed';
       if(ok){
         oct.textContent='Deploy verified end to end in '+r.duration_s+'s'+(r.stored_fix?', and the fix was stored.':'.');
-        ocn.textContent=r.stored_fix?'That fix is now keyed by its error signature. Run it on a second machine to see the knowledge-base hit with no model call.':'Resolved without learning anything new — the rules table or knowledge base already had it.';
+        var nt=targetsById[nextTarget(lastTarget)];
+        ocn.textContent=r.stored_fix
+          ? ('That fix is now keyed by its error signature. Try '+(nt?nt.label:'a different machine')+' to see the knowledge-base hit with no model call.')
+          : 'Resolved without learning anything new — the rules table or knowledge base already had it.';
+        second.textContent = nt ? ('Try '+nt.label) : 'Try a different machine';
         second.hidden=false;
       } else {
         oct.textContent='Deploy failed cleanly: '+(r.failure_reason||'no verified fix');
@@ -113,7 +150,10 @@
     };
   }
   refreshAcct();
-  run.addEventListener('click',function(){deploy('cloud-1');});
-  second.addEventListener('click',function(){deploy('cloud-2');});
+  var lastTarget=null;
+  run.addEventListener('click',function(){ lastTarget=targetSel.value; deploy(lastTarget); });
+  second.addEventListener('click',function(){
+    var nt=nextTarget(lastTarget); targetSel.value=nt; lastTarget=nt; deploy(nt);
+  });
   reset.addEventListener('click',function(){if(es)es.close();active=false;run.disabled=false;clear();localEl.innerHTML='<span class="ln t-dim">Waiting for a codebase…</span>';cloudEl.innerHTML='<span class="ln t-dim">Waiting for the agent…</span>';note.textContent='Pick a project and press Scan & deploy.';});
 })();

@@ -21,7 +21,7 @@ echo "__VENV__=$(python3 -c 'import venv, ensurepip; print("ok")' 2>&1 | tail -1
 echo "__GIT__=$(git --version 2>&1 | head -1)"
 echo "__DOCKER__=$(docker --version 2>&1 | head -1)"
 echo "__GCC__=$(gcc --version 2>&1 | head -1)"
-echo "__PKG_MGR__=$(command -v apt-get dnf yum apk 2>/dev/null | head -1)"
+echo "__PKG_MGR__=$(for _pm in apt-get dnf yum apk; do command -v "$_pm" >/dev/null 2>&1 && { echo "$_pm"; break; }; done)"
 echo "__HOSTNAME__=$(hostname)"
 echo "__MEM_MB__=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)"
 echo "__DISK_FREE_MB__=$(df -Pm / 2>/dev/null | awk 'NR==2 {print $4}')"

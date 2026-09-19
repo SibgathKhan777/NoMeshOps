@@ -16,23 +16,26 @@
 <div class="wrap view-head">
   <div class="eyebrow">Live demo · real deploy, streamed from the server</div>
   <h1>Add a codebase. Watch the cloud machine break, and watch it get fixed.</h1>
-  <p class="lede">Left is the control plane. Right is a real target machine. When you press Scan &amp; deploy, this server
-  runs the actual agent against that machine over SSH-less Systems Manager (or Docker locally) and streams each event
-  live. These lines are produced right now, not replayed.</p>
+  <p class="lede">Left is the control plane. Right is a real target machine &mdash; pick any of six, spanning five
+  clouds and three package managers. When you press Scan &amp; deploy, this server runs the actual agent against that
+  machine and streams each event live. These lines are produced right now, not replayed.</p>
 </div>
 <div class="wrap">
   <div class="codebase">
-    <div class="cb-row">
+    <div class="cb-row cb-row-repo">
       <div class="field grow"><label for="cb-repo">Codebase</label><input id="cb-repo" type="url" value="https://github.com/SibgathKhan777/nomeshops-sample.git"></div>
+    </div>
+    <div class="cb-row cb-row-opts">
       <div class="field"><label for="cb-scenario">Recorded project</label><select id="cb-scenario">
         <option value="typo">Misspelled dependency (unknown error → model)</option>
         <option value="psycopg2">Database driver, source build (rules)</option>
         <option value="clean">Healthy project</option>
         <option value="crash">App that crashes at startup</option>
       </select></div>
+      <div class="field"><label for="cb-target">Target machine</label><select id="cb-target"><option>loading targets…</option></select></div>
       <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="cb-run">Scan &amp; deploy</button></div>
     </div>
-    <p class="cb-note" id="cb-note">Pick a project and press Scan &amp; deploy. The server deploys it to the target on the right and streams the result.</p>
+    <p class="cb-note" id="cb-note">Pick a project and a target, then press Scan &amp; deploy. The server deploys it to that machine and streams the result.</p>
     <p class="auth-quota" id="quota-line">Sign in to run the live demo &mdash; free accounts get 3 runs.</p>
   </div>
   <div class="machines">
@@ -63,7 +66,7 @@
   <div class="outcome" id="outcome" hidden>
     <div class="oc-main"><span class="oc-badge mono" id="oc-badge"></span><span id="oc-text"></span></div>
     <div class="oc-actions">
-      <button class="btn btn-ghost" id="cb-second" hidden>Deploy the same code on a second machine</button>
+      <button class="btn btn-ghost" id="cb-second" hidden>Try a different machine</button>
       <button class="btn btn-ghost" id="cb-reset">Start over</button>
     </div>
     <p class="oc-note" id="oc-note"></p>
