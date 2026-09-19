@@ -1,35 +1,833 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NoMeshOps — hosted deployment agent</title>
+<title>NoMeshOps — self-healing deployment agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="/static/app.css">
-</head><body>
-<header class="top"><div class="wrap topin">
-  <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a>
-  <span class="live">live server</span>
-  <nav class="top">
-    <a href="/demo" data-nav="demo">Live demo</a>
-    <a href="/device" data-nav="device">Sign in</a>
-    <a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source</a>
-  </nav>
-</div></header>
-<main>
-<div class="wrap view-head">
-  <div class="eyebrow">Self-healing deployment agent · hosted</div>
-  <h1>Deploy to a machine. When it breaks, the agent fixes it, and remembers.</h1>
-  <p class="lede">This is the running NoMeshOps server, not a mockup. The live demo below drives a real deploy against
-  a real target machine and streams every step from the agent as it happens. Sign in the way you would with
-  <span class="mono">aws login</span>: one command in your terminal, one approval in the browser.</p>
-  <div class="hero-cta">
-    <a class="btn btn-primary btn-lg" href="/demo">Run the live demo</a>
-    <a class="btn btn-ghost btn-lg" href="/device">Sign in from your terminal</a>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root{
+    /* light palette — complete set, redefined per theme below */
+    --ink:#11161d;          /* primary text */
+    --ink-2:#48525f;        /* secondary text */
+    --ink-3:#77818f;        /* tertiary / captions */
+    --ground:#f6f7f5;       /* page ground, warm-neutral biased off the slate */
+    --surface:#ffffff;
+    --rule:#dfe2dd;         /* hairlines */
+    --rule-strong:#c3c8c2;
+    /* the CLI's own channel colours: deterministic / remembered / generated */
+    --rules:#0f7a8c;
+    --kb:#2f7d4f;
+    --llm:#8a4bb5;
+    --fail:#b4442e;
+    --accent:var(--rules);
+    /* terminal stays dark in both themes, like an embedded console */
+    --term-bg:#10161c;
+    --term-fg:#cdd6df;
+    --term-dim:#69757f;
+    --term-rules:#4fd0e3;
+    --term-kb:#69d68c;
+    --term-llm:#c79bea;
+    --term-fail:#ff8b6b;
+    --term-ok:#69d68c;
+    --shadow:0 1px 2px rgba(17,22,29,.06),0 8px 24px -12px rgba(17,22,29,.18);
+    --maxw:1040px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e6ebf0; --ink-2:#a3aeba; --ink-3:#7d8794;
+      --ground:#0d1116; --surface:#141a21; --rule:#242c35; --rule-strong:#333d48;
+      --rules:#4fd0e3; --kb:#69d68c; --llm:#c79bea; --fail:#ff8b6b;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e6ebf0; --ink-2:#a3aeba; --ink-3:#7d8794;
+    --ground:#0d1116; --surface:#141a21; --rule:#242c35; --rule-strong:#333d48;
+    --rules:#4fd0e3; --kb:#69d68c; --llm:#c79bea; --fail:#ff8b6b;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding-inline:20px}
+  h1,h2,h3{font-family:Archivo,"IBM Plex Sans",sans-serif; text-wrap:balance; margin:0; letter-spacing:-.02em}
+  h1{font-size:clamp(30px,5.4vw,50px); line-height:1.08; font-weight:700}
+  h2{font-size:clamp(22px,3.2vw,30px); line-height:1.18; font-weight:600}
+  h3{font-size:17px; font-weight:600; letter-spacing:-.01em}
+  p{margin:0}
+  a{color:inherit}
+  code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:500;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  }
+
+  /* ---------- header ---------- */
+  header.top{
+    position:sticky; top:env(safe-area-inset-top,0px); z-index:50;
+    background:color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--rule);
+  }
+  .topin{display:flex; align-items:center; gap:18px; min-height:56px}
+  .brand{display:flex; align-items:center; gap:9px; font-family:Archivo,sans-serif; font-weight:700; letter-spacing:-.02em; font-size:16px; text-decoration:none}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--kb);box-shadow:0 0 0 3px color-mix(in srgb,var(--kb) 22%,transparent);flex:none}
+  nav.top{margin-left:auto; display:flex; gap:20px; align-items:center}
+  nav.top a{font-size:14px; color:var(--ink-2); text-decoration:none}
+  nav.top a:hover{color:var(--ink)}
+  @media (max-width:720px){ nav.top a.hide-sm{display:none} }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font-family:"IBM Plex Sans",sans-serif; font-size:15px; font-weight:500;
+    padding:11px 20px; border-radius:7px; border:1px solid transparent;
+    text-decoration:none; cursor:pointer; transition:transform .12s ease, background .15s ease;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--ink); color:var(--ground); border-color:var(--ink)}
+  .btn-primary:hover{background:color-mix(in srgb,var(--ink) 86%, var(--ground))}
+  .btn-ghost{background:transparent; color:var(--ink); border-color:var(--rule-strong)}
+  .btn-ghost:hover{border-color:var(--ink-2)}
+  .btn-lg{font-size:17px; padding:15px 30px; border-radius:8px}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+
+  /* ---------- hero ---------- */
+  .hero{padding-block:clamp(38px,7vw,68px) 26px}
+  .hero-grid{display:grid; gap:34px}
+  @media (min-width:900px){ .hero-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr); align-items:start; gap:44px} }
+  .lede{font-size:18px; color:var(--ink-2); max-width:56ch; margin-top:16px}
+  .hero-cta{display:flex; flex-wrap:wrap; gap:12px; margin-top:26px}
+  .hero-note{margin-top:16px; font-size:13px; color:var(--ink-3)}
+
+  /* ---------- terminal ---------- */
+  .term{
+    background:var(--term-bg); border-radius:10px; overflow:hidden;
+    border:1px solid #232c35; box-shadow:var(--shadow);
+  }
+  .term-bar{
+    display:flex; align-items:center; gap:8px; padding:9px 13px;
+    border-bottom:1px solid #212a33; background:#141b22;
+  }
+  .term-bar .lamp{width:9px;height:9px;border-radius:50%;background:#2f3a44;flex:none}
+  .term-title{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--term-dim); margin-left:4px; letter-spacing:.04em}
+  .term-replay{
+    margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11px;
+    background:transparent; border:1px solid #2c3641; color:var(--term-dim);
+    padding:3px 10px; border-radius:5px; cursor:pointer;
+  }
+  .term-replay:hover{color:var(--term-fg); border-color:#3d4a57}
+  .term-body{
+    padding:14px 15px 17px; font-family:"IBM Plex Mono",monospace;
+    font-size:12.5px; line-height:1.75; color:var(--term-fg);
+    overflow-x:auto; min-height:300px;
+  }
+  .term-body .ln{display:block; white-space:pre}
+  .t-dim{color:var(--term-dim)}
+  .t-rules{color:var(--term-rules)}
+  .t-kb{color:var(--term-kb)}
+  .t-llm{color:var(--term-llm)}
+  .t-fail{color:var(--term-fail)}
+  .t-ok{color:var(--term-ok)}
+  .caret{display:inline-block;width:7px;height:14px;background:var(--term-fg);vertical-align:-2px;animation:blink 1.05s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){ .caret{animation:none} }
+
+  /* ---------- sections ---------- */
+  section{padding-block:clamp(40px,6vw,64px); border-top:1px solid var(--rule)}
+  .sec-head{max-width:64ch}
+  .sec-head h2{margin-top:9px}
+  .sec-head p{margin-top:12px; color:var(--ink-2)}
+
+  /* problem */
+  .pain{display:grid; gap:0; margin-top:30px; border-top:1px solid var(--rule)}
+  .pain-row{
+    display:grid; gap:4px 26px; padding-block:18px; border-bottom:1px solid var(--rule);
+    grid-template-columns:1fr;
+  }
+  @media (min-width:760px){ .pain-row{grid-template-columns:minmax(0,340px) minmax(0,1fr); align-items:baseline} }
+  .pain-row .err{font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--fail); word-break:break-word}
+  .pain-row .say{color:var(--ink-2); font-size:15px}
+
+  /* audience */
+  .who{display:grid; gap:18px; margin-top:30px}
+  @media (min-width:700px){ .who{grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px 34px} }
+  .who-item{display:grid; gap:5px; padding-left:15px; border-left:2px solid var(--rule-strong)}
+  .who-item h3{font-size:15px}
+  .who-item p{font-size:14.5px; color:var(--ink-2)}
+
+  /* ladder */
+  .ladder{display:grid; gap:14px; margin-top:30px}
+  @media (min-width:860px){ .ladder{grid-template-columns:repeat(3,minmax(0,1fr))} }
+  .tier{
+    background:var(--surface); border:1px solid var(--rule); border-radius:9px;
+    padding:20px 18px 18px; display:grid; gap:9px; align-content:start;
+    border-top:3px solid var(--tc);
+  }
+  .tier-1{--tc:var(--rules)} .tier-2{--tc:var(--kb)} .tier-3{--tc:var(--llm)}
+  .tier .step{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--tc); font-weight:600}
+  .tier h3{font-size:16px}
+  .tier p{font-size:14.5px; color:var(--ink-2)}
+  .tier .speed{
+    font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--ink-3);
+    padding-top:10px; margin-top:auto; border-top:1px dashed var(--rule); font-variant-numeric:tabular-nums;
+  }
+  .gate{
+    margin-top:22px; padding:19px 20px; border:1px solid var(--rule);
+    border-left:3px solid var(--kb); border-radius:8px; background:var(--surface);
+  }
+  .gate h3{margin-bottom:7px}
+  .gate p{color:var(--ink-2); font-size:14.5px}
+  .chain{display:flex; flex-wrap:wrap; gap:7px; margin-top:13px}
+  .chain span{
+    font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2);
+    border:1px solid var(--rule-strong); border-radius:20px; padding:3px 11px; white-space:nowrap;
+  }
+
+  /* proof table */
+  .proof{margin-top:26px; overflow-x:auto; border:1px solid var(--rule); border-radius:9px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; min-width:520px; font-size:14.5px}
+  th,td{text-align:left; padding:11px 16px; border-bottom:1px solid var(--rule)}
+  tbody tr:last-child td{border-bottom:none}
+  th{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:500}
+  td.num{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap}
+  .measured{margin-top:11px; font-size:12.5px; color:var(--ink-3)}
+
+  /* signup */
+  .signup{
+    margin-top:26px; background:var(--surface); border:1px solid var(--rule);
+    border-radius:10px; padding:24px 22px; box-shadow:var(--shadow);
+  }
+  .field{display:grid; gap:6px; margin-bottom:14px}
+  .field label{font-size:13px; font-weight:500; color:var(--ink-2)}
+  .field input, .field select{
+    font-family:"IBM Plex Sans",sans-serif; font-size:15px; color:var(--ink);
+    background:var(--ground); border:1px solid var(--rule-strong); border-radius:7px;
+    padding:10px 12px; width:100%;
+  }
+  .field input::placeholder{color:var(--ink-3)}
+  .form-row{display:grid; gap:14px}
+  @media (min-width:640px){ .form-row{grid-template-columns:1fr 1fr; gap:14px 16px} }
+  .signup-foot{display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-top:4px}
+  .count{font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink-3); font-variant-numeric:tabular-nums; text-decoration:underline; text-underline-offset:3px}
+  .count:hover{color:var(--ink)}
+  .msg{font-size:14px; margin-top:12px; display:none}
+  .msg.show{display:block}
+  .msg.ok{color:var(--kb)}
+  .msg.err{color:var(--fail)}
+  .privacy{font-size:12.5px; color:var(--ink-3); margin-top:12px}
+
+  /* use band */
+  .band{
+    text-align:center; border:1px solid var(--rule); border-radius:12px;
+    background:var(--surface); padding:clamp(28px,5vw,44px) 22px; margin-top:6px; box-shadow:var(--shadow);
+  }
+  .band h2{margin-bottom:10px}
+  .band p{color:var(--ink-2); max-width:52ch; margin:0 auto}
+  .band .hero-cta{justify-content:center}
+
+  /* docs */
+  .docs{display:grid; gap:26px; margin-top:28px}
+  .doc-block h3{margin-bottom:5px}
+  .doc-block > p{color:var(--ink-2); font-size:14.5px; margin-bottom:12px}
+  .pre{
+    position:relative; background:var(--term-bg); border:1px solid #232c35;
+    border-radius:8px; overflow:hidden;
+  }
+  .pre pre{
+    margin:0; padding:15px 16px; overflow-x:auto;
+    font-family:"IBM Plex Mono",monospace; font-size:12.5px; line-height:1.72; color:var(--term-fg);
+  }
+  .pre .cm{color:var(--term-dim)}
+  .pre .op{color:var(--term-rules)}
+  .copy{
+    position:absolute; top:9px; right:9px; font-family:"IBM Plex Mono",monospace; font-size:10.5px;
+    background:#1b232b; border:1px solid #2c3641; color:var(--term-dim);
+    padding:4px 9px; border-radius:5px; cursor:pointer;
+  }
+  .copy:hover{color:var(--term-fg)}
+  .cmds{overflow-x:auto; border:1px solid var(--rule); border-radius:9px; background:var(--surface)}
+  .cmds table{min-width:560px}
+  .cmds td:first-child{font-family:"IBM Plex Mono",monospace; font-size:13px; white-space:nowrap; color:var(--ink)}
+  .cmds td:last-child{color:var(--ink-2); font-size:14px}
+
+  footer{border-top:1px solid var(--rule); padding-block:26px 34px; color:var(--ink-3); font-size:13.5px}
+  .foot{display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center}
+  footer a{color:var(--ink-2)}
+  /* ---------- views (router) ---------- */
+  .view-head{padding-block:clamp(34px,6vw,58px) 10px}
+  .view-title{font-size:clamp(26px,4.4vw,40px); margin-top:12px}
+  nav.top a.active{color:var(--ink); font-weight:500}
+
+  /* ---------- demo: codebase bar ---------- */
+  .codebase{margin-top:22px; background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:18px 18px 12px; box-shadow:var(--shadow)}
+  .cb-row{display:grid; gap:12px 14px}
+  @media (min-width:860px){ .cb-row{grid-template-columns:minmax(0,1.6fr) minmax(0,1.2fr) auto; align-items:end} }
+  .field.grow{min-width:0}
+  .field.btns label{visibility:hidden}
+  .cb-note{font-size:13px; color:var(--ink-3); margin-top:4px}
+
+  /* ---------- demo: machines ---------- */
+  .machines{display:grid; gap:14px; margin-top:16px}
+  @media (min-width:900px){ .machines{grid-template-columns:minmax(0,1fr) 176px minmax(0,1fr); align-items:stretch} }
+  .machine{background:var(--term-bg); border:1px solid #232c35; border-radius:10px; overflow:hidden; box-shadow:var(--shadow); display:flex; flex-direction:column; min-width:0}
+  .m-head{display:flex; align-items:center; gap:11px; padding:11px 13px; background:#141b22; border-bottom:1px solid #212a33; color:var(--term-fg)}
+  .m-lamp{width:10px;height:10px;border-radius:50%;flex:none;background:#2f3a44}
+  .m-lamp.local{background:#4fd0e3; box-shadow:0 0 0 3px rgba(79,208,227,.18)}
+  .m-lamp.cloud{background:#c79bea; box-shadow:0 0 0 3px rgba(199,155,234,.18)}
+  .m-name{font-family:Archivo,sans-serif; font-weight:600; font-size:14px; line-height:1.2}
+  .m-sub{font-size:11px; color:var(--term-dim); margin-top:2px}
+  .m-state{margin-left:auto; font-size:11px; color:var(--term-dim); border:1px solid #2c3641; border-radius:20px; padding:2px 9px; white-space:nowrap}
+  .m-state.busy{color:var(--term-rules); border-color:#2a4a52}
+  .m-state.fail{color:var(--term-fail); border-color:#5a3328}
+  .m-state.ok{color:var(--term-ok); border-color:#2a4a37}
+  .m-body{padding:13px 14px 16px; font-size:12.5px; line-height:1.72; color:var(--term-fg); overflow-x:auto; min-height:320px; max-height:460px; overflow-y:auto; flex:1}
+  .m-body .ln{display:block; white-space:pre-wrap; word-break:break-word}
+  .m-body .ln.new{animation:lnin .25s ease-out}
+  @keyframes lnin{from{opacity:0; transform:translateY(3px)} to{opacity:1; transform:none}}
+  @media (prefers-reduced-motion:reduce){ .m-body .ln.new{animation:none} }
+
+  /* ---------- demo: agent strip ---------- */
+  .agent{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:14px 13px; display:flex; flex-direction:column; min-width:0}
+  .agent-title{margin-bottom:8px}
+  .ladder-mini{display:grid; gap:6px}
+  .rung{display:grid; grid-template-columns:10px 1fr auto; align-items:center; gap:8px; font-size:13px; padding:6px 8px; border-radius:6px; border:1px solid var(--rule)}
+  .rung .r-dot{width:8px;height:8px;border-radius:50%;background:var(--rule-strong)}
+  .rung .r-state{font-size:11px; color:var(--ink-3)}
+  .rung[data-rung="rules"].on .r-dot{background:var(--rules)} .rung[data-rung="kb"].on .r-dot{background:var(--kb)} .rung[data-rung="llm"].on .r-dot{background:var(--llm)}
+  .rung.checking{border-color:var(--rule-strong)} .rung.checking .r-dot{animation:pulse 1s ease-in-out infinite}
+  .rung.hit{border-color:var(--kb); background:color-mix(in srgb,var(--kb) 8%,transparent)} .rung.hit .r-state{color:var(--kb)}
+  .rung.miss .r-state{color:var(--ink-3)} .rung.miss .r-dot{background:var(--rule-strong)}
+  .rung.skip{opacity:.55}
+  @keyframes pulse{50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){ .rung.checking .r-dot{animation:none} }
+  .xfer{margin-top:12px; display:grid; gap:4px; justify-items:center; min-height:34px}
+  .xfer-line{display:block; width:100%; height:2px; background:var(--rule); border-radius:2px; position:relative; overflow:hidden}
+  .xfer.go .xfer-line::after{content:""; position:absolute; inset:0; width:40%; background:var(--kb); animation:slide 1.1s linear infinite}
+  .xfer.go.llm .xfer-line::after{background:var(--llm)}
+  @keyframes slide{from{transform:translateX(-100%)} to{transform:translateX(260%)}}
+  @media (prefers-reduced-motion:reduce){ .xfer.go .xfer-line::after{animation:none; width:100%} }
+  .xfer-label{font-size:11px; color:var(--ink-3); text-align:center; word-break:break-word}
+  .verify-list{list-style:none; margin:0; padding:0; display:grid; gap:5px}
+  .verify-list li{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-3)}
+  .v-dot{width:9px;height:9px;border-radius:50%;background:var(--rule-strong);flex:none}
+  .verify-list li.ok{color:var(--ink)} .verify-list li.ok .v-dot,.v-dot.ok{background:var(--kb)}
+  .verify-list li.fail{color:var(--fail)} .verify-list li.fail .v-dot{background:var(--fail)}
+  .verify-list li.checking .v-dot{animation:pulse 1s ease-in-out infinite; background:var(--rules)}
+  @media (max-width:899px){
+    .agent{display:grid; grid-template-columns:1fr 1fr; gap:6px 18px}
+    .agent .agent-title:first-child{grid-column:1} .ladder-mini{grid-column:1} .xfer{grid-column:1/-1}
+  }
+
+  /* ---------- demo: outcome ---------- */
+  .outcome{margin-top:14px; background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:16px 18px; display:grid; gap:12px; box-shadow:var(--shadow)}
+  .oc-main{display:flex; flex-wrap:wrap; align-items:center; gap:12px; font-size:15px}
+  .oc-badge{font-size:11px; letter-spacing:.1em; text-transform:uppercase; padding:4px 10px; border-radius:20px; border:1px solid var(--rule-strong)}
+  .oc-badge.ok{color:var(--kb); border-color:var(--kb)} .oc-badge.fail{color:var(--fail); border-color:var(--fail)}
+  .oc-actions{display:flex; flex-wrap:wrap; gap:10px}
+  .oc-note{font-size:13px; color:var(--ink-3)}
+
+  /* ---------- sign-in ---------- */
+  .login-grid{display:grid; gap:18px; margin-top:22px}
+  @media (min-width:900px){ .login-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start} }
+  .authbox{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:24px 22px; box-shadow:var(--shadow)}
+  .auth-h{font-size:22px; margin-top:8px}
+  .auth-p{color:var(--ink-2); font-size:15px; margin-top:10px}
+  .auth-p.small{font-size:13px; color:var(--ink-3)}
+  .code-input{font-size:22px; letter-spacing:.14em; text-transform:uppercase; padding:12px 14px}
+  .scopes{list-style:none; margin:12px 0 0; padding:0; display:grid; gap:8px}
+  .scopes li{display:flex; align-items:center; gap:10px; font-size:14.5px}
+  .proto-note{font-size:13px; color:var(--ink-3); margin-top:16px; max-width:70ch}
+  .t-code{color:#ffd27a; font-weight:600}
+
+
+  .live-badge{font-size:11px;color:var(--kb);border:1px solid var(--kb);border-radius:20px;padding:2px 9px;display:inline-flex;gap:6px;align-items:center}
+  .live-badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--kb);animation:beat 1.4s ease-in-out infinite}
+  @keyframes beat{50%{opacity:.35}}
+  .srv-line{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3);margin-top:14px}
+  .srv-line b{color:var(--kb);font-weight:600}
+
+</style>
+<header class="top">
+  <div class="wrap topin">
+    <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a>
+    <span class="live-badge mono">live server</span>
+    <nav class="top">
+      <a class="hide-sm" href="#how">How it works</a>
+      <a href="/demo">Live demo</a>
+      <a href="/device">Sign in</a>
+      <a href="#docs">Docs</a>
+    </nav>
   </div>
-  <div class="banner"><span class="mono" style="color:var(--kb)">●</span> Server status: <span class="mono" id="srv-status">checking…</span></div>
-</div>
+</header>
+<main id="top">
+
+
+  <!-- HERO -->
+  <div class="wrap hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">Self-healing deployment agent</div>
+        <h1 style="margin-top:12px">Your deploy failed once. It should never cost you an afternoon again.</h1>
+        <p class="lede">
+          NoMeshOps deploys your project on a machine, and when the deploy breaks it fixes it: a rules table first,
+          then a knowledge base of fixes it has already proven, and a model only for errors nobody has seen yet.
+          Every fix has to survive a real health check before it is remembered.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="/demo">Watch it fix a deploy</a>
+          <a class="btn btn-ghost" href="/device">Sign in to the hosted tool</a>
+        </div>
+        <p class="hero-note">Hosted on our cloud, driven from your terminal. Also runs on your own machines over AWS Systems Manager, or locally in Docker.</p>
+      </div>
+
+      <div class="term" aria-label="Recorded terminal session from a real deployment">
+        <div class="term-bar">
+          <span class="lamp"></span><span class="lamp"></span><span class="lamp"></span>
+          <span class="term-title">nomeshops deploy — recorded run</span>
+          <button class="term-replay" id="replay" type="button">replay</button>
+        </div>
+        <div class="term-body" id="termbody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROBLEM -->
+  <section id="problem">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">The problem</div>
+        <h2>The same five errors, solved over and over, by everyone</h2>
+        <p>
+          Deployment failures are rarely novel. They are the same handful of environment mismatches, and the fix is
+          usually one line. What costs the afternoon is finding that line again: reading the traceback, searching,
+          trying three suggestions, discovering the box has a different Python than your laptop. Then a teammate hits
+          the identical error next week and starts from zero, because the answer lived in someone's head.
+        </p>
+      </div>
+      <div class="pain">
+        <div class="pain-row">
+          <div class="err">Error: pg_config executable not found</div>
+          <div class="say">A database driver is compiling from source and the machine has no Postgres headers. One package install fixes it. Nothing on screen says which package.</div>
+        </div>
+        <div class="pain-row">
+          <div class="err">No matching distribution found for reqests</div>
+          <div class="say">A typo in a requirements file. Obvious once you see it, invisible while you are scanning a hundred lines of pip output.</div>
+        </div>
+        <div class="pain-row">
+          <div class="err">ensurepip is not available</div>
+          <div class="say">A fresh cloud image without pip or venv. Nothing is broken; the machine was simply never prepared.</div>
+        </div>
+        <div class="pain-row">
+          <div class="err">Successfully installed — then the app never answers</div>
+          <div class="say">The worst one. Install exits zero, CI goes green, and the service is dead on arrival because an import fails at startup.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHO -->
+  <section id="who">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Who this is for</div>
+        <h2>Anyone who deploys to machines they do not control the image of</h2>
+      </div>
+      <div class="who">
+        <div class="who-item">
+          <h3>Solo builders shipping to a VPS</h3>
+          <p>You have no platform team. Every environment error is yours to solve, at night, from a phone screenshot of a traceback.</p>
+        </div>
+        <div class="who-item">
+          <h3>Small teams without an internal platform</h3>
+          <p>The fixes live in Slack threads and one person's memory. When that person is on leave, the knowledge is gone.</p>
+        </div>
+        <div class="who-item">
+          <h3>Teams running mixed fleets</h3>
+          <p>Ubuntu and Amazon Linux, x86 and Graviton, three Python versions. The same project fails differently on each box.</p>
+        </div>
+        <div class="who-item">
+          <h3>Students and hackathon teams</h3>
+          <p>You are deploying an unfamiliar stack on a deadline, and an hour lost to a missing header is an hour not spent building.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">How it works</div>
+        <h2>Cheap answers first, the model last</h2>
+        <p>
+          Most failures do not need intelligence, they need someone who has seen them before. So the agent walks a
+          ladder and stops at the first rung that works. The colours below are the ones the terminal actually prints.
+        </p>
+      </div>
+
+      <div class="ladder">
+        <div class="tier tier-1">
+          <div class="step">Rung 1 · deterministic</div>
+          <h3>Rules it can prove</h3>
+          <p>It fingerprints the machine, compares that against what your project declares, and names the mismatches before touching the network. No guessing and no model call.</p>
+          <div class="speed">0.18 ms average</div>
+        </div>
+        <div class="tier tier-2">
+          <div class="step">Rung 2 · remembered</div>
+          <h3>Fixes it has already proven</h3>
+          <p>Each failure gets a signature built from the error, the package, the operating system, the architecture and the Python version. If that signature has a verified fix, it is applied straight away.</p>
+          <div class="speed">1 ms local · 301 ms on AWS</div>
+        </div>
+        <div class="tier tier-3">
+          <div class="step">Rung 3 · generated</div>
+          <h3>A model, only for the genuinely new</h3>
+          <p>Only when the first two rungs miss does it ask Claude for one structured fix, under a strict execution contract. One model-assisted retry per run, never a loop.</p>
+          <div class="speed">2.3 s, once per new error</div>
+        </div>
+      </div>
+
+      <div class="gate">
+        <h3>A fix is not a fix until the app answers</h3>
+        <p>
+          Nothing is remembered on the strength of an exit code. A fix has to carry the deploy through the whole chain
+          below, including the last link, which is the one most tools skip: proving that the process answering the
+          health check is the one the agent just started, and not something left running on that port.
+        </p>
+        <div class="chain">
+          <span>dependencies install</span>
+          <span>every package imports</span>
+          <span>process starts</span>
+          <span>health endpoint returns 200</span>
+          <span>responder is our process</span>
+        </div>
+        <p style="margin-top:13px; font-size:14.5px; color:var(--ink-2)">
+          Failures that are not your project's fault are handled separately and never learned from. A network timeout
+          gets a plain retry, not a fix, because a knowledge base that learns from coincidence gets worse over time
+          rather than better.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROOF -->
+  <section id="proof">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Measured, not claimed</div>
+        <h2>What it did on real machines</h2>
+        <p>Two EC2 instances, same operating system and Python version, same broken project. The only difference is that the second run happened after the first one taught it something.</p>
+      </div>
+      <div class="proof">
+        <table>
+          <thead>
+            <tr><th scope="col">Run</th><th scope="col">Path taken</th><th scope="col">Model calls</th><th scope="col">Time</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>First machine, unknown error</td><td>rules miss, memory miss, model proposes a fix, verified, stored</td><td class="num">1</td><td class="num">42 s</td></tr>
+            <tr><td>Second machine, same error</td><td>memory hit in 301 ms, same fix, verified</td><td class="num">0</td><td class="num">34 s</td></tr>
+            <tr><td>Different OS, Python 3.9</td><td>rules predicted the missing tooling and installed it first</td><td class="num">0</td><td class="num">58 s</td></tr>
+            <tr><td>Unrelated project, same error</td><td>memory hit in 1 ms, fix transferred across projects</td><td class="num">0</td><td class="num">24 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="measured">
+        Measured September 2026 in ap-south-1 and in local Docker. The agent also passes 11 of 11 end-to-end
+        scenarios, including deliberate failures: an app that crashes at startup, a wrong health path, a bad
+        repository URL and an unreachable target. Each of those must fail cleanly and teach it nothing.
+      </p>
+    </div>
+  </section>
+
+  <!-- USE BAND -->
+  <section id="use">
+    <div class="wrap">
+      <div class="band">
+        <div class="eyebrow">Ready when you are</div>
+        <h2>Use NoMeshOps</h2>
+        <p>It is a terminal tool. Sign in once from your shell, the way you would with <code>aws login</code>, and deploy from there. Or run the open-source version on your own machines.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg" href="/device">Sign in from your terminal</a>
+          <a class="btn btn-ghost btn-lg" href="/demo">See the live demo</a>
+          <a class="btn btn-ghost btn-lg" href="#docs">Read the docs</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOCS -->
+  <section id="docs">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Docs</div>
+        <h2>Running it from your terminal</h2>
+        <p>Two modes. Local mode needs only Docker and is the fastest way to see the whole loop. AWS mode drives real EC2 instances over Systems Manager.</p>
+      </div>
+
+      <div class="docs">
+
+        <div class="doc-block">
+          <h3>1. Install</h3>
+          <p>Python 3.11 or newer. Clone the repository and create a virtual environment.</p>
+          <div class="pre">
+            <button class="copy" type="button">copy</button>
+            <pre><code>git clone https://github.com/SibgathKhan777/NoMeshOps.git
+cd NoMeshOps
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt</code></pre>
+          </div>
+        </div>
+
+        <div class="doc-block">
+          <h3>2. Local mode — no AWS account</h3>
+          <p>Two Docker containers stand in for servers. One is a bare Ubuntu image with no Python and no git, so you can watch the rules table prepare it.</p>
+          <div class="pre">
+            <button class="copy" type="button">copy</button>
+            <pre><code><span class="cm"># point every backend at your laptop</span>
+cp .env.local.example .env
+
+<span class="cm"># start the practice targets</span>
+./scripts/local_targets.sh
+
+<span class="cm"># deploy a project onto one of them</span>
+.venv/bin/python -m cli.demo deploy \
+  <span class="op">--repo</span> https://github.com/SibgathKhan777/nomeshops-sample.git \
+  <span class="op">--instance</span> nomeshops-ubuntu22
+
+<span class="cm"># run it a second time: the fix is now remembered</span>
+.venv/bin/python -m cli.demo deploy \
+  <span class="op">--repo</span> https://github.com/SibgathKhan777/nomeshops-sample.git \
+  <span class="op">--instance</span> nomeshops-al2023
+
+<span class="cm"># clean up</span>
+./scripts/local_targets.sh --stop</code></pre>
+          </div>
+        </div>
+
+        <div class="doc-block">
+          <h3>3. AWS mode — your own instances</h3>
+          <p>Targets need the Systems Manager managed-instance policy and the tag <code>nomeshops=target</code>. The provisioning script creates the fix table and the log bucket for you.</p>
+          <div class="pre">
+            <button class="copy" type="button">copy</button>
+            <pre><code>export AWS_PROFILE=default AWS_REGION=ap-south-1
+
+<span class="cm"># DynamoDB table for fixes, S3 bucket for audit logs</span>
+./scripts/provision.sh
+
+<span class="cm"># three practice instances: Ubuntu, Amazon Linux, Graviton</span>
+./scripts/launch_targets.sh
+
+<span class="cm"># deploy against a real instance id</span>
+.venv/bin/python -m cli.demo deploy \
+  <span class="op">--repo</span> https://github.com/you/your-api.git \
+  <span class="op">--instance</span> i-0123456789abcdef0
+
+<span class="cm"># when you are done, remove every tagged instance</span>
+./scripts/launch_targets.sh --terminate</code></pre>
+          </div>
+        </div>
+
+        <div class="doc-block">
+          <h3>4. Useful flags</h3>
+          <p>The agent guesses a start command from your manifest. Override it when your entry point is unusual.</p>
+          <div class="cmds">
+            <table>
+              <tbody>
+                <tr><td>--start-command</td><td>How to start your app, if it is not <code>app:app</code> on uvicorn</td></tr>
+                <tr><td>--port</td><td>Port the app listens on. Default 8000</td></tr>
+                <tr><td>--health-path</td><td>Path polled to confirm the app is alive. Default <code>/health</code></td></tr>
+                <tr><td>--branch</td><td>Branch or tag to deploy</td></tr>
+                <tr><td>--keep-running</td><td>Leave the app running after a verified deploy</td></tr>
+                <tr><td>--url</td><td>Drive a deployed orchestrator instead of running the loop locally</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="doc-block">
+          <h3>5. Inspecting what it learned</h3>
+          <p>Everything it remembers and every attempt it made are readable from the same terminal.</p>
+          <div class="pre">
+            <button class="copy" type="button">copy</button>
+            <pre><code><span class="cm"># every verified fix, with how many times it has held up</span>
+.venv/bin/python -m cli.demo fixes list
+
+<span class="cm"># the audit record of each attempt</span>
+.venv/bin/python -m cli.demo attempts
+
+<span class="cm"># what a machine actually looks like, without deploying</span>
+.venv/bin/python -m cli.demo fingerprint --instance nomeshops-ubuntu22</code></pre>
+          </div>
+        </div>
+
+        <div class="doc-block">
+          <h3>6. Your app only has to do one thing</h3>
+          <p>Answer a health endpoint. That is the entire contract, and it is how the agent tells a real deploy from a green exit code.</p>
+          <div class="pre">
+            <button class="copy" type="button">copy</button>
+            <pre><code><span class="cm"># app.py</span>
+from fastapi import FastAPI
+app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"ok": True}</code></pre>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+<p class="wrap srv-line">Server status: <b id="srv-status">checking…</b></p>
 </main>
-<footer><div class="wrap foot"><span>NoMeshOps — hosted deployment agent</span><a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">GitHub</a></div></footer>
+<footer>
+  <div class="wrap foot">
+    <span>NoMeshOps — built for the WeMakeDevs and AWS First Commit hackathon</span>
+    <a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source on GitHub</a>
+    <a href="/demo">Live demo</a>
+  </div>
+</footer>
 <script>
-fetch('/health').then(r=>r.json()).then(d=>{document.getElementById('srv-status').textContent='online · region '+d.region+' · model '+d.model;}).catch(()=>{document.getElementById('srv-status').textContent='unreachable';});
+(function(){
+  "use strict";
+/* ---------- terminal replay (real recorded run) ---------- */
+  var LINES = [
+    ['', '$ nomeshops deploy --repo github.com/you/api --instance i-02cd2ed3'],
+    ['dim',  '   1.2s  scan         4 deps · framework=fastapi'],
+    ['dim',  '   4.3s  fingerprint  Ubuntu 22.04.5 x86_64 · python 3.10.12 · pip=no'],
+    ['rules','   4.3s  check        1 predicted issue in 0.2 ms'],
+    ['rules','   4.3s  check        pip missing -> apt-get install -y python3-pip python3-venv'],
+    ['dim',  '   4.4s  deploy       attempt 1: clone + venv + install'],
+    ['fail', '  13.1s  deploy       FAILED: No matching distribution found for reqests'],
+    ['dim',  '  13.1s  signature    44ed471b492e719f2437'],
+    ['rules','  13.2s  rules        rules table: no deterministic fix'],
+    ['kb',   '  13.5s  knowledge    knowledge base MISS in 253 ms'],
+    ['llm',  '  15.9s  claude       proposed in 2.3s: fix typo reqests -> requests'],
+    ['dim',  '  16.0s  deploy       attempt 2 with the fix applied'],
+    ['ok',   '  35.6s  deploy       install ok in 19.9s'],
+    ['ok',   '  42.0s  verify       imports ok · app started · health 200'],
+    ['kb',   '  42.3s  store        stored verified fix  44ed471b <- claude'],
+    ['ok',   '  42.3s  finalize     DEPLOY VERIFIED in 42.0s'],
+    ['', ''],
+    ['', '$ nomeshops deploy --repo github.com/you/api --instance i-0b106bcf'],
+    ['dim',  '   2.9s  fingerprint  Ubuntu 22.04.5 x86_64 · python 3.10.12'],
+    ['fail', '  12.7s  deploy       FAILED: No matching distribution found for reqests'],
+    ['kb',   '  13.0s  knowledge    knowledge base HIT in 301 ms (verified 1x)'],
+    ['ok',   '  33.4s  verify       imports ok · app started · health 200'],
+    ['ok',   '  33.9s  finalize     DEPLOY VERIFIED in 33.6s — 0 model calls']
+  ];
+  var CLS = {dim:'t-dim', rules:'t-rules', kb:'t-kb', llm:'t-llm', fail:'t-fail', ok:'t-ok'};
+  var body = document.getElementById('termbody');
+
+  function renderAll(){
+    body.textContent = '';
+    for (var i=0;i<LINES.length;i++) addLine(LINES[i]);
+  }
+  function addLine(l){
+    var s = document.createElement('span');
+    s.className = 'ln' + (CLS[l[0]] ? ' ' + CLS[l[0]] : '');
+    s.textContent = l[1] || ' ';
+    body.appendChild(s);
+    return s;
+  }
+  function play(){
+    body.textContent = '';
+    var i = 0;
+    (function step(){
+      if (i >= LINES.length){
+        var c = document.createElement('span');
+        c.className = 'caret';
+        body.appendChild(c);
+        return;
+      }
+      addLine(LINES[i]);
+      body.scrollTop = body.scrollHeight;
+      i++;
+      setTimeout(step, LINES[i-1][1] === '' ? 260 : 150);
+    })();
+  }
+  renderAll();
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var rp = document.getElementById('replay');
+  if (rp) rp.addEventListener('click', function(){ reduce ? renderAll() : play(); });
+
+  /* ---------- copy buttons ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.copy'), function(btn){
+    btn.addEventListener('click', function(){
+      var pre = btn.parentNode.querySelector('code');
+      if (!pre) return;
+      var text = pre.innerText;
+      var done = function(){ btn.textContent = 'copied'; setTimeout(function(){ btn.textContent = 'copy'; }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done, function(){ btn.textContent = 'select manually'; });
+      } else {
+        try{
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta); done();
+        }catch(e){ btn.textContent = 'select manually'; }
+      }
+    });
+  });
+
+  /* ---------- sign-up: opens a pre-filled GitHub issue, no backend needed ---------- */
+  var form   = document.getElementById('signupForm');
+  var msg    = document.getElementById('su-msg');
+  var REPO_ISSUES = 'https://github.com/SibgathKhan777/NoMeshOps/issues/new';
+
+  function say(text, kind){
+    msg.textContent = text;
+    msg.className = 'msg show ' + (kind || '');
+  }
+
+  form.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var name  = document.getElementById('su-name').value.trim();
+    var target= document.getElementById('su-target').value;
+    var stack = document.getElementById('su-stack').value.trim();
+    if (!name){ say('Add a name or team so we know who is asking.', 'err'); return; }
+
+    var title = 'Early access: ' + name;
+    var body =
+      '**Who:** ' + name + '\n' +
+      '**Deploys to:** ' + target + '\n' +
+      '**What breaks most often:** ' + (stack || '(not said)') + '\n\n' +
+      '_Submitted from the NoMeshOps landing page._';
+    var url = REPO_ISSUES
+      + '?labels=' + encodeURIComponent('early-access')
+      + '&title=' + encodeURIComponent(title)
+      + '&body=' + encodeURIComponent(body);
+
+    var w = window.open(url, '_blank', 'noopener');
+    if (w){
+      say('GitHub opened in a new tab with your request filled in. Press "Create" there and you are on the list.', 'ok');
+      try { localStorage.setItem('nomeshops.requested', '1'); } catch(e){}
+    } else {
+      say('Your browser blocked the new tab. Allow pop-ups for this page, or open GitHub and file an issue labelled early-access.', 'err');
+    }
+  });
+
+  try {
+    if (localStorage.getItem('nomeshops.requested') === '1'){
+      say('You already opened a request from this browser. Thank you.', 'ok');
+    }
+  } catch(e){}
+
+
+  Array.prototype.forEach.call(document.querySelectorAll('.copy'), function(btn){
+    btn.addEventListener('click', function(){
+      var pre = btn.parentNode.querySelector('code'); if(!pre) return;
+      var text = pre.innerText, done=function(){btn.textContent='copied';setTimeout(function(){btn.textContent='copy';},1400);};
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){btn.textContent='select';});}
+      else{try{var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();}catch(e){btn.textContent='select';}}
+    });
+  });
+
+  fetch('/health').then(function(r){return r.json();}).then(function(d){document.getElementById('srv-status').textContent='online · region '+d.region+' · model '+d.model;}).catch(function(){document.getElementById('srv-status').textContent='unreachable — start the server';});
+})();
 </script>
 </body></html>
