@@ -16,12 +16,25 @@ Then open http://127.0.0.1:8090
 | `/demo` | two-machine live demo — runs a REAL deploy against a target and streams every event over SSE |
 | `/device` | `aws login`-style device sign-in: enter the code the CLI printed, approve, session returns to the shell |
 
-## The demo is real, across six target machines
+## The demo deploys whatever repo you give it — it does not know the answer in advance
 
-`GET /api/demo/targets` lists the six real targets; `GET /api/demo/deploy?scenario=<typo|psycopg2|clean|crash>&target=<id>`
-runs `stream_deploy` against whichever one you pick and streams `log`/`result` SSE events. Nothing is faked. The
-scenarios map to branches of the sample repo. The per-target lock means two deploys to the same target at once fail
-cleanly with `TargetBusy` — that is correct behaviour, shown live.
+`GET /api/demo/targets` lists the six real targets. `GET /api/demo/deploy?target=<id>&repo=<url>[&branch=][&health_path=][&start_command=]`
+runs `stream_deploy` against whichever machine you pick, against whichever public repo you give it, and streams
+`log`/`result` SSE events. Earlier this always deployed one fixed sample repo and made the caller pick a "scenario"
+naming which known failure to reproduce — that never matched what the product actually does (scan → fingerprint →
+deploy → diagnose → fix, with no prior knowledge of what's wrong) and the UI contradicted its own "not replayed"
+claim. Fixed 2026-09-19: `repo` is deployed as given, `branch`/`health_path`/`start_command` are optional overrides
+(default: no override, so `start_command` is `None` and the agent auto-detects it from the scan exactly like the
+CLI does — it was previously hardcoded to `uvicorn app:app`, which was itself a smaller version of the same bug).
+`GET /api/demo/examples` lists four quick-fill example branches of the sample repo for a visitor with no broken
+project of their own; the backend gives them no special treatment once resolved to a URL. `repo` is checked against
+`ALLOWED_GIT_HOSTS` (github.com, gitlab.com, bitbucket.org, codeberg.org, git.sr.ht; https only) before anything
+touches `git clone` on a shared target, closing off a crafted URL reaching something internal. Proved for real: a
+throwaway public repo (`nomeshops-unseen-demo`) that the backend has never seen — no scenario, no branch, no
+start command — was scanned, correctly flagged an `lxml` source-build issue from the fingerprint alone, fixed it,
+auto-detected the FastAPI start command, and verified a real health response, all through the actual browser UI.
+The per-target lock means two deploys to the same target at once fail cleanly with `TargetBusy` — that is correct
+behaviour, shown live.
 
 | id | cloud | image | package manager | default python |
 |---|---|---|---|---|

@@ -27,9 +27,35 @@
   var localEl=document.getElementById('m-local'), cloudEl=document.getElementById('m-cloud');
   var sLocal=document.getElementById('s-local'), sCloud=document.getElementById('s-cloud'), cloudSub=document.getElementById('s-cloud-sub');
   var run=document.getElementById('cb-run'), second=document.getElementById('cb-second'), reset=document.getElementById('cb-reset');
-  var scen=document.getElementById('cb-scenario'), repo=document.getElementById('cb-repo'), note=document.getElementById('cb-note');
+  var repo=document.getElementById('cb-repo'), note=document.getElementById('cb-note');
+  var branchIn=document.getElementById('cb-branch'), healthIn=document.getElementById('cb-health'), startIn=document.getElementById('cb-start');
   var targetSel=document.getElementById('cb-target');
   var targetsById={}, targetOrder=[];
+  var DEFAULT_REPO='https://github.com/SibgathKhan777/nomeshops-sample.git';
+
+  function loadExamples(){
+    var wrap=document.getElementById('cb-examples');
+    fetch('/api/demo/examples').then(function(r){return r.json();}).then(function(d){
+      d.examples.forEach(function(ex){
+        var btn=document.createElement('button');
+        btn.type='button'; btn.className='cb-example-chip'; btn.dataset.branch=ex.branch||'';
+        btn.textContent=ex.id.charAt(0).toUpperCase()+ex.id.slice(1).replace(/([A-Z])/g,' $1');
+        btn.title=ex.description;
+        btn.addEventListener('click', function(){
+          repo.value=DEFAULT_REPO; branchIn.value=ex.branch||'';
+          Array.prototype.forEach.call(wrap.querySelectorAll('.cb-example-chip'), function(b){b.classList.remove('active');});
+          btn.classList.add('active');
+          note.textContent=ex.description;
+        });
+        wrap.appendChild(btn);
+      });
+    }).catch(function(){});
+  }
+  loadExamples();
+  repo.addEventListener('input', function(){
+    var wrap=document.getElementById('cb-examples');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.cb-example-chip'), function(b){b.classList.remove('active');});
+  });
 
   function loadTargets(){
     fetch('/api/demo/targets').then(function(r){return r.json();}).then(function(d){
@@ -112,13 +138,19 @@
     if(active)return;
     if (!meCache){ note.textContent='Sign in to run the live demo.'; NoMeshAuth.open('signup', function(){ refreshAcct(); }); return; }
     if (meCache.demo_runs_remaining <= 0){ note.textContent="You've used all "+meCache.demo_runs_limit+" free demo runs on this account."; return; }
+    var repoVal=(repo.value||'').trim();
+    if (!repoVal){ note.textContent='Paste a public repo URL, or try one of the examples above.'; repo.focus(); return; }
     active=true; run.disabled=true; second.disabled=true; clear();
     var tok=NoMeshAuth.token();
-    var url='/api/demo/deploy?scenario='+encodeURIComponent(scen.value)+'&target='+target+'&token='+encodeURIComponent(tok);
+    var params=new URLSearchParams({target:target, repo:repoVal, token:tok});
+    if (branchIn.value.trim()) params.set('branch', branchIn.value.trim());
+    if (healthIn.value.trim()) params.set('health_path', healthIn.value.trim());
+    if (startIn.value.trim()) params.set('start_command', startIn.value.trim());
+    var url='/api/demo/deploy?'+params.toString();
     var tLabel=(targetsById[target]||{}).label||target;
-    note.textContent='Deploying to '+tLabel+' now. Streaming live from the server…';
+    note.textContent='Scanning and deploying to '+tLabel+' now — the agent has not been told what, if anything, is wrong with this repo.';
     es=new EventSource(url);
-    es.addEventListener('meta',function(e){var d=JSON.parse(e.data); ln(localEl,'t-dim','$ nomeshops deploy --repo '+d.repo.replace('https://','')+' --target '+d.target); cloudSub.textContent=d.label;
+    es.addEventListener('meta',function(e){var d=JSON.parse(e.data); ln(localEl,'t-dim','$ nomeshops deploy --repo '+d.repo.replace('https://','')+(d.branch?' --branch '+d.branch:'')+' --target '+d.target); cloudSub.textContent=d.label;
       if (typeof d.demo_runs_used === 'number'){ meCache.demo_runs_used = d.demo_runs_used; meCache.demo_runs_remaining = Math.max(0, d.demo_runs_limit - d.demo_runs_used); syncGate(meCache); }
     });
     es.addEventListener('log',function(e){handle(JSON.parse(e.data));});
@@ -144,8 +176,8 @@
     });
     es.onerror=function(){
       if(active){
-        // an EventSource that never got a first byte (401/403 from the gate) surfaces here, not as JSON
-        ln(localEl,'t-fail','could not start the deploy — sign in, or you may be out of free runs');
+        // an EventSource that never got a first byte (401/403/400 from the gate) surfaces here, not as JSON
+        ln(localEl,'t-fail','could not start the deploy — sign in, check the repo is a public https URL on github.com / gitlab.com / bitbucket.org / codeberg.org, or you may be out of free runs');
         es.close(); active=false; run.disabled=false; refreshAcct();
       }
     };
@@ -156,5 +188,5 @@
   second.addEventListener('click',function(){
     var nt=nextTarget(lastTarget); targetSel.value=nt; lastTarget=nt; deploy(nt);
   });
-  reset.addEventListener('click',function(){if(es)es.close();active=false;run.disabled=false;clear();localEl.innerHTML='<span class="ln t-dim">Waiting for a codebase…</span>';cloudEl.innerHTML='<span class="ln t-dim">Waiting for the agent…</span>';note.textContent='Each scenario is a real branch of the sample repo above \u2014 picking one and pressing Scan & deploy has the server clone and deploy that exact code to the chosen machine right now.';});
+  reset.addEventListener('click',function(){if(es)es.close();active=false;run.disabled=false;clear();localEl.innerHTML='<span class="ln t-dim">Waiting for a codebase…</span>';cloudEl.innerHTML='<span class="ln t-dim">Waiting for the agent…</span>';note.textContent='The agent scans whatever you paste, fingerprints the target, and deploys \u2014 it does not know in advance what, if anything, is wrong with your project.';});
 })();

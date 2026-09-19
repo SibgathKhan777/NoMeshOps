@@ -16,26 +16,30 @@
 <div class="wrap view-head">
   <div class="eyebrow">Live demo · real deploy, streamed from the server</div>
   <h1>Add a codebase. Watch the cloud machine break, and watch it get fixed.</h1>
-  <p class="lede">Left is the control plane. Right is a real target machine &mdash; pick any of six, spanning five
-  clouds and three package managers. When you press Scan &amp; deploy, this server runs the actual agent against that
-  machine and streams each event live. These lines are produced right now, not replayed.</p>
+  <p class="lede">Paste any public repo. This server clones it onto a real target machine, and if the deploy breaks, the
+  agent works out why on its own &mdash; no hints from you, nothing pre-selected &mdash; the same way it would on your own
+  infrastructure. Right is a real target machine, pick any of six spanning five clouds and three package managers.
+  These lines are produced right now, not replayed.</p>
 </div>
 <div class="wrap">
   <div class="codebase">
     <div class="cb-row cb-row-repo">
-      <div class="field grow"><label for="cb-repo">Codebase</label><input id="cb-repo" type="url" value="https://github.com/SibgathKhan777/nomeshops-sample.git"></div>
-    </div>
-    <div class="cb-row cb-row-opts">
-      <div class="field"><label for="cb-scenario">Scenario</label><select id="cb-scenario">
-        <option value="typo">Typo'd dependency — unseen error, agent asks the model</option>
-        <option value="psycopg2">Compiled DB driver — known error, fixed by rules alone</option>
-        <option value="clean">Healthy project — nothing to fix</option>
-        <option value="crash">Crashes at startup — install succeeds, health check catches it</option>
-      </select></div>
+      <div class="field grow"><label for="cb-repo">Codebase</label><input id="cb-repo" type="url" placeholder="https://github.com/you/your-project.git" value="https://github.com/SibgathKhan777/nomeshops-sample.git"></div>
       <div class="field"><label for="cb-target">Target machine</label><select id="cb-target"><option>loading targets…</option></select></div>
       <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="cb-run">Scan &amp; deploy</button></div>
     </div>
-    <p class="cb-note" id="cb-note">Each scenario is a real branch of the sample repo above — picking one and pressing Scan &amp; deploy has the server clone and deploy that exact code to the chosen machine right now.</p>
+    <div class="cb-examples" id="cb-examples">
+      <span class="cb-examples-label">No repo handy? Try one of ours:</span>
+    </div>
+    <details class="cb-advanced">
+      <summary>Advanced (branch, health check path, start command)</summary>
+      <div class="cb-row cb-row-adv">
+        <div class="field"><label for="cb-branch">Branch</label><input id="cb-branch" type="text" placeholder="default branch"></div>
+        <div class="field"><label for="cb-health">Health check path</label><input id="cb-health" type="text" placeholder="/health" value="/health"></div>
+        <div class="field grow"><label for="cb-start">Start command</label><input id="cb-start" type="text" placeholder="auto-detected from the scan"></div>
+      </div>
+    </details>
+    <p class="cb-note" id="cb-note">The agent scans whatever you paste, fingerprints the target, and deploys &mdash; it does not know in advance what, if anything, is wrong with your project.</p>
     <p class="auth-quota" id="quota-line">Sign in to run the live demo &mdash; free accounts get 3 runs.</p>
   </div>
   <div class="machines">

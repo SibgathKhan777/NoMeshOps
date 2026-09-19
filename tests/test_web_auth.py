@@ -70,3 +70,53 @@ def test_password_hash_uses_unique_salt(client):
     assert h1 != h2, "each hash must use a fresh salt"
     assert web._verify_password("samepassword", h1)
     assert not web._verify_password("wrongpassword", h1)
+
+
+def test_demo_deploy_rejects_disallowed_host(client, monkeypatch):
+    tok = client.post("/api/auth/signup", json={"email": "a@b.com", "password": "longenough"}).json()["token"]
+    r = client.get(f"/api/demo/deploy?target=aws-ubuntu&repo=https://evil.example.com/x.git&token={tok}")
+    assert r.status_code == 400
+    assert "github.com" in r.json()["detail"]
+
+
+def test_demo_deploy_accepts_arbitrary_allowed_repo(client, monkeypatch):
+    tok = client.post("/api/auth/signup", json={"email": "a@b.com", "password": "longenough"}).json()["token"]
+    calls = {}
+
+    def fake_stream(req):
+        calls["req"] = req
+        yield "finalize", {"events": [], "deploy_success": True, "final_status": "success"}
+    monkeypatch.setattr("app.web.stream_deploy", fake_stream)
+
+    r = client.get(
+        "/api/demo/deploy?target=aws-ubuntu&repo=https://github.com/someone/their-own-project.git"
+        f"&branch=main&health_path=/healthz&start_command=python+run.py&token={tok}"
+    )
+    assert r.status_code == 200
+    req = calls["req"]
+    assert req["repo_url"] == "https://github.com/someone/their-own-project.git"
+    assert req["branch"] == "main"
+    assert req["health_path"] == "/healthz"
+    assert req["start_command"] == "python run.py"
+
+
+def test_demo_deploy_default_start_command_is_none_for_autodetect(client, monkeypatch):
+    tok = client.post("/api/auth/signup", json={"email": "a@b.com", "password": "longenough"}).json()["token"]
+    calls = {}
+
+    def fake_stream(req):
+        calls["req"] = req
+        yield "finalize", {"events": [], "deploy_success": True, "final_status": "success"}
+    monkeypatch.setattr("app.web.stream_deploy", fake_stream)
+
+    r = client.get(f"/api/demo/deploy?target=aws-ubuntu&repo=https://github.com/x/y.git&token={tok}")
+    assert r.status_code == 200
+    assert calls["req"]["start_command"] is None, "no start_command given -> must be None so the agent auto-detects, not a hardcoded uvicorn guess"
+
+
+def test_demo_examples_and_targets_endpoints(client):
+    ex = client.get("/api/demo/examples").json()["examples"]
+    assert {"typo", "psycopg2", "clean", "crash"} == {e["id"] for e in ex}
+    targets = client.get("/api/demo/targets").json()["targets"]
+    assert len(targets) == 6
+    assert {"AWS EC2", "Google Cloud", "Azure / DigitalOcean", "Oracle Cloud / on-prem", "Fly.io / lightweight VPS"} == {t["cloud"] for t in targets}

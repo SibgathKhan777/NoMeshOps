@@ -41,9 +41,20 @@ nav.top a{font-size:14px; color:var(--ink-2); text-decoration:none} nav.top a:ho
 .field.grow{min-width:0}
 .codebase{margin-top:22px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:18px;box-shadow:var(--shadow)}
 .cb-row{display:grid;gap:12px 14px;margin-bottom:12px} .cb-row:last-of-type{margin-bottom:0}
-.cb-row-repo{grid-template-columns:1fr}
-.cb-row-opts{grid-template-columns:1fr} @media(min-width:760px){.cb-row-opts{grid-template-columns:minmax(0,1.3fr) minmax(0,1.5fr) auto;align-items:end}}
+.cb-row-repo{grid-template-columns:1fr} @media(min-width:760px){.cb-row-repo{grid-template-columns:minmax(0,1.7fr) minmax(0,1.1fr) auto;align-items:end}}
+.cb-row-adv{grid-template-columns:1fr} @media(min-width:760px){.cb-row-adv{grid-template-columns:minmax(0,.9fr) minmax(0,1fr) minmax(0,1.4fr)}}
 #cb-target{max-width:100%}
+.cb-examples{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.cb-examples-label{font-size:13px;color:var(--ink-3);margin-right:2px}
+.cb-example-chip{font-family:inherit;font-size:12.5px;color:var(--ink-2);background:var(--ground);border:1px solid var(--rule-strong);border-radius:20px;padding:5px 13px;cursor:pointer}
+.cb-example-chip:hover{border-color:var(--ink-2);color:var(--ink)}
+.cb-example-chip.active{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.cb-advanced{margin-bottom:12px;border:1px solid var(--rule);border-radius:8px;padding:0}
+.cb-advanced summary{cursor:pointer;padding:10px 14px;font-size:13px;color:var(--ink-2);list-style:none}
+.cb-advanced summary::-webkit-details-marker{display:none}
+.cb-advanced summary::before{content:"\\25b8";display:inline-block;margin-right:7px;transition:transform .15s}
+.cb-advanced[open] summary::before{transform:rotate(90deg)}
+.cb-advanced .cb-row-adv{padding:0 14px 14px}
 .cb-note{font-size:13px;color:var(--ink-3);margin-top:10px}
 .machines{display:grid;gap:14px;margin-top:16px} @media(min-width:920px){.machines{grid-template-columns:minmax(0,1fr) 180px minmax(0,1fr);align-items:stretch}}
 .machine{background:var(--term-bg);border:1px solid #232c35;border-radius:10px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0}

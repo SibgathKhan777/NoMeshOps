@@ -269,12 +269,6 @@ DEMO_TARGETS = {
                      "label": "Fly.io / lightweight VPS · Alpine 3.20 · x86_64", "port": 8005},
 }
 DEMO_REPO = "https://github.com/SibgathKhan777/nomeshops-sample.git"
-DEMO_BRANCHES = {
-    "typo": None,                    # default branch ships the reqests typo
-    "psycopg2": "eval-psycopg2",
-    "clean": "eval-clean",
-    "crash": "eval-start-crash",
-}
 
 
 @router.get("/api/demo/targets")
@@ -284,9 +278,43 @@ def demo_targets():
     return {"targets": [{"id": k, **v, "port": v["port"]} for k, v in DEMO_TARGETS.items()]}
 
 
+# The demo deploys ANY public repo the visitor gives it — that is the actual product, not a
+# fixture. These four are just quick-fill examples for someone without a broken repo handy;
+# the backend does not treat them specially once past this URL-shaped fill-in.
+DEMO_EXAMPLES = {
+    "typo": {"branch": None, "description": "Misspelled dependency — the agent has never seen this exact error before, so it asks the model for one fix"},
+    "psycopg2": {"branch": "eval-psycopg2", "description": "A database driver that compiles from source — the deterministic rules table predicts and fixes this before the first attempt"},
+    "clean": {"branch": "eval-clean", "description": "A healthy project — nothing to fix"},
+    "crash": {"branch": "eval-start-crash", "description": "Install exits 0, but the app crashes at startup — the health check catches what the exit code missed"},
+}
+
+ALLOWED_GIT_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "codeberg.org", "git.sr.ht"}
+
+
+def _validate_repo_url(repo: str) -> str:
+    """Only https:// URLs on known public git hosts. This runs on a shared machine, so this is
+    not just tidiness: it keeps a crafted URL from making `git clone` reach something internal
+    (a metadata endpoint, a private network address, a non-http scheme) instead of a real repo."""
+    from urllib.parse import urlparse
+    repo = (repo or "").strip()
+    if not repo:
+        raise HTTPException(400, "enter a git repository URL")
+    if len(repo) > 300:
+        raise HTTPException(400, "that URL is too long")
+    u = urlparse(repo)
+    if u.scheme != "https" or u.netloc.lower() not in ALLOWED_GIT_HOSTS or not u.path.strip("/"):
+        raise HTTPException(400, f"the hosted demo only deploys public repos on {', '.join(sorted(ALLOWED_GIT_HOSTS))}")
+    return repo
+
+
 @router.get("/api/demo/deploy")
-def demo_deploy(request: Request, scenario: str = "typo", target: str = "cloud-1"):
+def demo_deploy(request: Request, target: str = "aws-ubuntu", repo: str = "", branch: str = "",
+                health_path: str = "/health", start_command: str = ""):
     """Run a REAL deploy against a configured target and stream every orchestrator event as SSE.
+    `repo` is deployed exactly as given — scanned, fingerprinted, and if it fails, classified and
+    fixed the same way the CLI would, with no foreknowledge of what is wrong with it. The UI's
+    example chips are just a convenience that fill `repo`/`branch` client-side before calling this;
+    nothing here treats them specially.
     Gated: requires a signed-in account and enforces DEMO_RUN_LIMIT uses per account."""
     acc = _account_from_request(request)
     if not acc:
@@ -304,16 +332,18 @@ def demo_deploy(request: Request, scenario: str = "typo", target: str = "cloud-1
     tgt = DEMO_TARGETS.get(target)
     if not tgt:
         raise HTTPException(400, "unknown target")
-    branch = DEMO_BRANCHES.get(scenario, None)
+
+    repo_url = _validate_repo_url(repo or DEMO_REPO)
+    branch = branch.strip() or None
     req = {
-        "repo_url": DEMO_REPO, "instance_id": tgt["instance"], "branch": branch,
-        "app_port": tgt["port"], "health_path": "/health",
+        "repo_url": repo_url, "instance_id": tgt["instance"], "branch": branch,
+        "app_port": tgt["port"], "health_path": (health_path or "/health").strip(),
         "keep_running": False, "preempt_predicted_fixes": True,
-        "start_command": f"python -m uvicorn app:app --host 127.0.0.1 --port {tgt['port']}",
+        "start_command": start_command.strip() or None,  # None -> the agent auto-detects from the scan, same as the CLI
     }
 
     def gen():
-        yield f"event: meta\ndata: {json.dumps({'target': target, 'label': tgt['label'], 'scenario': scenario, 'repo': DEMO_REPO, 'demo_runs_used': used + 1, 'demo_runs_limit': DEMO_RUN_LIMIT})}\n\n"
+        yield f"event: meta\ndata: {json.dumps({'target': target, 'label': tgt['label'], 'repo': repo_url, 'branch': branch, 'demo_runs_used': used + 1, 'demo_runs_limit': DEMO_RUN_LIMIT})}\n\n"
         final = None
         try:
             for node, delta in stream_deploy(req):
@@ -341,3 +371,9 @@ def web_fixes():
         return {"items": knowledge.list_fixes(100)}
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"items": [], "error": f"{type(e).__name__}: {e}"})
+
+
+@router.get("/api/demo/examples")
+def demo_examples():
+    """Quick-fill examples for the UI — not a menu of required choices."""
+    return {"examples": [{"id": k, **v} for k, v in DEMO_EXAMPLES.items()]}
