@@ -4,10 +4,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/auth.css">
 </head><body>
 <header class="top"><div class="wrap topin">
   <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a>
   <span class="live">live server</span>
+  <span id="acct-slot"></span>
   <nav class="top"><a href="/demo" class="active">Live demo</a><a href="/device">Sign in</a><a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source</a></nav>
 </div></header>
 <main>
@@ -31,6 +33,7 @@
       <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="cb-run">Scan &amp; deploy</button></div>
     </div>
     <p class="cb-note" id="cb-note">Pick a project and press Scan &amp; deploy. The server deploys it to the target on the right and streams the result.</p>
+    <p class="auth-quota" id="quota-line">Sign in to run the live demo &mdash; free accounts get 3 runs.</p>
   </div>
   <div class="machines">
     <div class="machine">
@@ -68,5 +71,6 @@
 </div>
 </main>
 <footer><div class="wrap foot"><span>Streamed live from the NoMeshOps server</span></div></footer>
+<script src="/static/auth.js"></script>
 <script src="/static/demo.js"></script>
 </body></html>

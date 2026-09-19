@@ -2,8 +2,13 @@
 real deploy against the configured targets and streams every event over SSE. Mounted by app.main."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
+import re
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -15,6 +20,124 @@ from app.graph import stream_deploy
 from app.nodes import knowledge
 
 router = APIRouter()
+
+# --------------------------------------------------------------------------- accounts (email + password)
+DEMO_RUN_LIMIT = 3
+ACCOUNT_SESSION_TTL = 7 * 24 * 3600  # 7 days
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_users_lock = threading.Lock()
+
+
+def _users_path() -> str:
+    os.makedirs(settings.local_data_dir, exist_ok=True)
+    return os.path.join(settings.local_data_dir, "users.json")
+
+
+def _load_users() -> dict[str, dict]:
+    try:
+        with open(_users_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_users(users: dict[str, dict]) -> None:
+    tmp = _users_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
+    os.replace(tmp, _users_path())
+
+
+def _hash_password(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
+    return f"{salt}${digest}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        salt, _ = stored.split("$", 1)
+    except ValueError:
+        return False
+    return hmac.compare_digest(_hash_password(password, salt), stored)
+
+
+_account_sessions: dict[str, dict] = {}  # token -> {email, created}
+
+
+def _account_from_request(request: Request) -> dict | None:
+    """Accepts the token as a bearer header (fetch/XHR) or a `token` query param
+    (EventSource cannot set custom headers), so both call styles work."""
+    tok = request.headers.get("authorization", "")
+    if tok.lower().startswith("bearer "):
+        tok = tok[7:]
+    if not tok:
+        tok = request.query_params.get("token", "")
+    sess = _account_sessions.get(tok)
+    if not sess or time.time() - sess["created"] > ACCOUNT_SESSION_TTL:
+        return None
+    users = _load_users()
+    user = users.get(sess["email"])
+    if not user:
+        return None
+    return {"email": sess["email"], "token": tok, "demo_runs": user.get("demo_runs", 0)}
+
+
+def _account_public(email: str, users: dict[str, dict] | None = None) -> dict:
+    users = users if users is not None else _load_users()
+    u = users.get(email, {})
+    used = int(u.get("demo_runs", 0))
+    return {"email": email, "demo_runs_used": used, "demo_runs_limit": DEMO_RUN_LIMIT,
+            "demo_runs_remaining": max(0, DEMO_RUN_LIMIT - used)}
+
+
+@router.post("/api/auth/signup")
+def auth_signup(payload: dict):
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+    if not EMAIL_RE.match(email):
+        raise HTTPException(400, "enter a valid email address")
+    if len(password) < 8:
+        raise HTTPException(400, "password must be at least 8 characters")
+    with _users_lock:
+        users = _load_users()
+        if email in users:
+            raise HTTPException(409, "an account with this email already exists — sign in instead")
+        users[email] = {"password": _hash_password(password), "demo_runs": 0, "created_at": time.time()}
+        _save_users(users)
+    token = secrets.token_urlsafe(32)
+    _account_sessions[token] = {"email": email, "created": time.time()}
+    return {"token": token, **_account_public(email, users)}
+
+
+@router.post("/api/auth/login")
+def auth_login(payload: dict):
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+    users = _load_users()
+    user = users.get(email)
+    if not user or not _verify_password(password, user.get("password", "")):
+        raise HTTPException(401, "wrong email or password")
+    token = secrets.token_urlsafe(32)
+    _account_sessions[token] = {"email": email, "created": time.time()}
+    return {"token": token, **_account_public(email, users)}
+
+
+@router.get("/api/auth/me")
+def auth_me(request: Request):
+    acc = _account_from_request(request)
+    if not acc:
+        raise HTTPException(401, "not signed in")
+    return _account_public(acc["email"])
+
+
+@router.post("/api/auth/logout")
+def auth_logout(request: Request):
+    tok = request.headers.get("authorization", "")
+    if tok.lower().startswith("bearer "):
+        tok = tok[7:]
+    _account_sessions.pop(tok, None)
+    return {"ok": True}
 
 # --------------------------------------------------------------------------- device-code auth
 CODE_TTL = 600          # seconds a device code is valid before approval
@@ -143,8 +266,22 @@ DEMO_PORTS = {"cloud-1": 8000, "cloud-2": 8001}
 
 
 @router.get("/api/demo/deploy")
-def demo_deploy(scenario: str = "typo", target: str = "cloud-1"):
-    """Run a REAL deploy against a configured target and stream every orchestrator event as SSE."""
+def demo_deploy(request: Request, scenario: str = "typo", target: str = "cloud-1"):
+    """Run a REAL deploy against a configured target and stream every orchestrator event as SSE.
+    Gated: requires a signed-in account and enforces DEMO_RUN_LIMIT uses per account."""
+    acc = _account_from_request(request)
+    if not acc:
+        raise HTTPException(401, "sign in to run the live demo")
+    with _users_lock:
+        users = _load_users()
+        user = users.get(acc["email"])
+        if not user:
+            raise HTTPException(401, "sign in to run the live demo")
+        used = int(user.get("demo_runs", 0))
+        if used >= DEMO_RUN_LIMIT:
+            raise HTTPException(403, f"you've used all {DEMO_RUN_LIMIT} free demo runs on this account")
+        user["demo_runs"] = used + 1
+        _save_users(users)
     tgt = DEMO_TARGETS.get(target)
     if not tgt:
         raise HTTPException(400, "unknown target")
@@ -157,7 +294,7 @@ def demo_deploy(scenario: str = "typo", target: str = "cloud-1"):
     }
 
     def gen():
-        yield f"event: meta\ndata: {json.dumps({'target': target, 'label': tgt['label'], 'scenario': scenario, 'repo': DEMO_REPO})}\n\n"
+        yield f"event: meta\ndata: {json.dumps({'target': target, 'label': tgt['label'], 'scenario': scenario, 'repo': DEMO_REPO, 'demo_runs_used': used + 1, 'demo_runs_limit': DEMO_RUN_LIMIT})}\n\n"
         final = None
         try:
             for node, delta in stream_deploy(req):

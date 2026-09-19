@@ -1,5 +1,29 @@
 (function(){
   "use strict";
+  var quotaLine = document.getElementById('quota-line');
+  var acctSlot = document.getElementById('acct-slot');
+  var meCache = null;
+
+  function refreshAcct(){
+    if (acctSlot) NoMeshAuth.mountAccountPill(acctSlot, {onChange: syncGate});
+    NoMeshAuth.me(true).then(function(d){ meCache = d; syncGate(d); });
+  }
+  function syncGate(d){
+    meCache = d;
+    var runBtn = document.getElementById('cb-run'), secondBtn = document.getElementById('cb-second');
+    if (!d){
+      quotaLine.textContent = 'Sign in to run the live demo \u2014 free accounts get 3 runs.';
+      if (runBtn){ runBtn.textContent = 'Sign in to deploy'; }
+      return;
+    }
+    var left = d.demo_runs_remaining;
+    quotaLine.textContent = left > 0
+      ? (d.email + ' \u00b7 ' + left + ' of ' + d.demo_runs_limit + ' free demo runs left')
+      : (d.email + ' \u00b7 all ' + d.demo_runs_limit + ' free demo runs used on this account');
+    if (runBtn) runBtn.textContent = left > 0 ? 'Scan & deploy' : 'No runs left';
+    if (secondBtn && left <= 0) secondBtn.hidden = true;
+  }
+
   var localEl=document.getElementById('m-local'), cloudEl=document.getElementById('m-cloud');
   var sLocal=document.getElementById('s-local'), sCloud=document.getElementById('s-cloud'), cloudSub=document.getElementById('s-cloud-sub');
   var run=document.getElementById('cb-run'), second=document.getElementById('cb-second'), reset=document.getElementById('cb-reset');
@@ -52,11 +76,17 @@
   }
 
   function deploy(target){
-    if(active)return; active=true; run.disabled=true; second.disabled=true; clear();
-    var url='/api/demo/deploy?scenario='+encodeURIComponent(scen.value)+'&target='+target;
+    if(active)return;
+    if (!meCache){ note.textContent='Sign in to run the live demo.'; NoMeshAuth.open('signup', function(){ refreshAcct(); }); return; }
+    if (meCache.demo_runs_remaining <= 0){ note.textContent="You've used all "+meCache.demo_runs_limit+" free demo runs on this account."; return; }
+    active=true; run.disabled=true; second.disabled=true; clear();
+    var tok=NoMeshAuth.token();
+    var url='/api/demo/deploy?scenario='+encodeURIComponent(scen.value)+'&target='+target+'&token='+encodeURIComponent(tok);
     note.textContent='Deploying to '+target+' now. Streaming live from the server…';
     es=new EventSource(url);
-    es.addEventListener('meta',function(e){var d=JSON.parse(e.data); ln(localEl,'t-dim','$ nomeshops deploy --repo '+d.repo.replace('https://','')+' --target '+d.target); cloudSub.textContent=d.label;});
+    es.addEventListener('meta',function(e){var d=JSON.parse(e.data); ln(localEl,'t-dim','$ nomeshops deploy --repo '+d.repo.replace('https://','')+' --target '+d.target); cloudSub.textContent=d.label;
+      if (typeof d.demo_runs_used === 'number'){ meCache.demo_runs_used = d.demo_runs_used; meCache.demo_runs_remaining = Math.max(0, d.demo_runs_limit - d.demo_runs_used); syncGate(meCache); }
+    });
     es.addEventListener('log',function(e){handle(JSON.parse(e.data));});
     es.addEventListener('result',function(e){
       var r=JSON.parse(e.data); es.close(); active=false; run.disabled=false; second.disabled=false;
@@ -74,8 +104,15 @@
       }
       outcome.scrollIntoView({block:'nearest',behavior:'smooth'});
     });
-    es.onerror=function(){ if(active){ln(localEl,'t-fail','stream interrupted — the server may still be finishing; check /api/fixes'); es.close(); active=false; run.disabled=false;} };
+    es.onerror=function(){
+      if(active){
+        // an EventSource that never got a first byte (401/403 from the gate) surfaces here, not as JSON
+        ln(localEl,'t-fail','could not start the deploy — sign in, or you may be out of free runs');
+        es.close(); active=false; run.disabled=false; refreshAcct();
+      }
+    };
   }
+  refreshAcct();
   run.addEventListener('click',function(){deploy('cloud-1');});
   second.addEventListener('click',function(){deploy('cloud-2');});
   reset.addEventListener('click',function(){if(es)es.close();active=false;run.disabled=false;clear();localEl.innerHTML='<span class="ln t-dim">Waiting for a codebase…</span>';cloudEl.innerHTML='<span class="ln t-dim">Waiting for the agent…</span>';note.textContent='Pick a project and press Scan & deploy.';});

@@ -351,10 +351,12 @@
   .srv-line b{color:var(--kb);font-weight:600}
 
 </style>
+<link rel="stylesheet" href="/static/auth.css">
 <header class="top">
   <div class="wrap topin">
     <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a>
     <span class="live-badge mono">live server</span>
+    <span id="acct-slot"></span>
     <nav class="top">
       <a class="hide-sm" href="#how">How it works</a>
       <a href="/demo">Live demo</a>
@@ -378,8 +380,8 @@
           Every fix has to survive a real health check before it is remembered.
         </p>
         <div class="hero-cta">
-          <a class="btn btn-primary" href="/demo">Watch it fix a deploy</a>
-          <a class="btn btn-ghost" href="/device">Sign in to the hosted tool</a>
+          <a class="btn btn-primary" href="/demo" id="cta-watch-demo">Watch it fix a deploy</a>
+          <button class="btn btn-ghost" href="#" id="cta-account" type="button">Sign in to the hosted tool</button>
         </div>
         <p class="hero-note">Hosted on our cloud, driven from your terminal. Also runs on your own machines over AWS Systems Manager, or locally in Docker.</p>
       </div>
@@ -550,8 +552,9 @@
         <h2>Use NoMeshOps</h2>
         <p>It is a terminal tool. Sign in once from your shell, the way you would with <code>aws login</code>, and deploy from there. Or run the open-source version on your own machines.</p>
         <div class="hero-cta">
-          <a class="btn btn-primary btn-lg" href="/device">Sign in from your terminal</a>
-          <a class="btn btn-ghost btn-lg" href="/demo">See the live demo</a>
+          <button class="btn btn-primary btn-lg" id="cta-account-2" type="button">Sign in with email</button>
+          <a class="btn btn-ghost btn-lg" href="/device">Sign in from your terminal</a>
+          <a class="btn btn-ghost btn-lg" href="/demo" id="cta-watch-demo-2">See the live demo</a>
           <a class="btn btn-ghost btn-lg" href="#docs">Read the docs</a>
         </div>
       </div>
@@ -691,9 +694,31 @@ def health():
     <a href="/demo">Live demo</a>
   </div>
 </footer>
+<script src="/static/auth.js"></script>
 <script>
 (function(){
   "use strict";
+  var acctSlot = document.getElementById('acct-slot');
+  if (acctSlot) NoMeshAuth.mountAccountPill(acctSlot);
+
+  function gateDemo(e){
+    e.preventDefault();
+    NoMeshAuth.me().then(function(d){
+      if (d) { window.location.href = '/demo'; }
+      else { NoMeshAuth.open('signup', function(){ window.location.href = '/demo'; }); }
+    });
+  }
+  ['cta-watch-demo','cta-watch-demo-2'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.addEventListener('click', gateDemo);
+  });
+  ['cta-account','cta-account-2'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', function(e){
+      e.preventDefault();
+      NoMeshAuth.me().then(function(d){ NoMeshAuth.open(d ? 'login' : 'signup', function(){ if (acctSlot) NoMeshAuth.mountAccountPill(acctSlot); }); });
+    });
+  });
+
 /* ---------- terminal replay (real recorded run) ---------- */
   var LINES = [
     ['', '$ nomeshops deploy --repo github.com/you/api --instance i-02cd2ed3'],

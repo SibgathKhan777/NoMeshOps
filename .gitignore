@@ -13,3 +13,4 @@ attempts/
 .nomeshops-graph-eval/
 .nomeshops-poison-eval/
 evals/results_e2e_local.log
+.nomeshops/users.json
