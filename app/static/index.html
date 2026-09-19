@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NoMeshOps — hosted deployment agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head><body>
+<header class="top"><div class="wrap topin">
+  <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a>
+  <span class="live">live server</span>
+  <nav class="top">
+    <a href="/demo" data-nav="demo">Live demo</a>
+    <a href="/device" data-nav="device">Sign in</a>
+    <a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source</a>
+  </nav>
+</div></header>
+<main>
+<div class="wrap view-head">
+  <div class="eyebrow">Self-healing deployment agent · hosted</div>
+  <h1>Deploy to a machine. When it breaks, the agent fixes it, and remembers.</h1>
+  <p class="lede">This is the running NoMeshOps server, not a mockup. The live demo below drives a real deploy against
+  a real target machine and streams every step from the agent as it happens. Sign in the way you would with
+  <span class="mono">aws login</span>: one command in your terminal, one approval in the browser.</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary btn-lg" href="/demo">Run the live demo</a>
+    <a class="btn btn-ghost btn-lg" href="/device">Sign in from your terminal</a>
+  </div>
+  <div class="banner"><span class="mono" style="color:var(--kb)">●</span> Server status: <span class="mono" id="srv-status">checking…</span></div>
+</div>
+</main>
+<footer><div class="wrap foot"><span>NoMeshOps — hosted deployment agent</span><a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">GitHub</a></div></footer>
+<script>
+fetch('/health').then(r=>r.json()).then(d=>{document.getElementById('srv-status').textContent='online · region '+d.region+' · model '+d.model;}).catch(()=>{document.getElementById('srv-status').textContent='unreachable';});
+</script>
+</body></html>

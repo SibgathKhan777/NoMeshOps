@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 
+import os
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.graph import run_deploy, stream_deploy, summarize
@@ -15,6 +17,27 @@ from app.nodes.store import list_attempts
 
 app = FastAPI(title="NoMeshOps", version="0.1.0",
               description="Self-healing deployment agent: fingerprint -> deploy -> rules -> knowledge base -> Bedrock -> verify -> remember")
+
+from app.web import router as web_router  # noqa: E402
+
+_STATIC = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+app.include_router(web_router)
+
+
+@app.get("/", include_in_schema=False)
+def _home():
+    return FileResponse(os.path.join(_STATIC, "index.html"))
+
+
+@app.get("/demo", include_in_schema=False)
+def _demo():
+    return FileResponse(os.path.join(_STATIC, "demo.html"))
+
+
+@app.get("/device", include_in_schema=False)
+def _device():
+    return FileResponse(os.path.join(_STATIC, "device.html"))
 
 
 @app.get("/health")

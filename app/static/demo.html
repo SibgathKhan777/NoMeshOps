@@ -1,0 +1,72 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live demo — NoMeshOps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head><body>
+<header class="top"><div class="wrap topin">
+  <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a>
+  <span class="live">live server</span>
+  <nav class="top"><a href="/demo" class="active">Live demo</a><a href="/device">Sign in</a><a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source</a></nav>
+</div></header>
+<main>
+<div class="wrap view-head">
+  <div class="eyebrow">Live demo · real deploy, streamed from the server</div>
+  <h1>Add a codebase. Watch the cloud machine break, and watch it get fixed.</h1>
+  <p class="lede">Left is the control plane. Right is a real target machine. When you press Scan &amp; deploy, this server
+  runs the actual agent against that machine over SSH-less Systems Manager (or Docker locally) and streams each event
+  live. These lines are produced right now, not replayed.</p>
+</div>
+<div class="wrap">
+  <div class="codebase">
+    <div class="cb-row">
+      <div class="field grow"><label for="cb-repo">Codebase</label><input id="cb-repo" type="url" value="https://github.com/SibgathKhan777/nomeshops-sample.git"></div>
+      <div class="field"><label for="cb-scenario">Recorded project</label><select id="cb-scenario">
+        <option value="typo">Misspelled dependency (unknown error → model)</option>
+        <option value="psycopg2">Database driver, source build (rules)</option>
+        <option value="clean">Healthy project</option>
+        <option value="crash">App that crashes at startup</option>
+      </select></div>
+      <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="cb-run">Scan &amp; deploy</button></div>
+    </div>
+    <p class="cb-note" id="cb-note">Pick a project and press Scan &amp; deploy. The server deploys it to the target on the right and streams the result.</p>
+  </div>
+  <div class="machines">
+    <div class="machine">
+      <div class="m-head"><span class="m-lamp local"></span><div><div class="m-name">Control plane</div><div class="m-sub mono">nomeshops orchestrator</div></div><span class="m-state mono" id="s-local">idle</span></div>
+      <div class="m-body mono" id="m-local"><span class="ln t-dim">Waiting for a codebase…</span></div>
+    </div>
+    <div class="agent">
+      <div class="agent-title eyebrow">Agent</div>
+      <div class="ladder-mini">
+        <div class="rung" data-rung="rules"><span class="r-dot"></span><span>Rules</span><span class="r-state" id="rs-rules">—</span></div>
+        <div class="rung" data-rung="kb"><span class="r-dot"></span><span>Knowledge</span><span class="r-state" id="rs-kb">—</span></div>
+        <div class="rung" data-rung="llm"><span class="r-dot"></span><span>Model</span><span class="r-state" id="rs-llm">—</span></div>
+      </div>
+      <div class="agent-title eyebrow" style="margin-top:14px">Verification</div>
+      <ul class="verify-list" id="vlist">
+        <li data-v="install"><span class="v-dot"></span>install</li>
+        <li data-v="import"><span class="v-dot"></span>imports</li>
+        <li data-v="start"><span class="v-dot"></span>process up</li>
+        <li data-v="health"><span class="v-dot"></span>health 200</li>
+      </ul>
+    </div>
+    <div class="machine">
+      <div class="m-head"><span class="m-lamp cloud"></span><div><div class="m-name">Target machine</div><div class="m-sub mono" id="s-cloud-sub">not yet fingerprinted</div></div><span class="m-state mono" id="s-cloud">idle</span></div>
+      <div class="m-body mono" id="m-cloud"><span class="ln t-dim">Waiting for the agent…</span></div>
+    </div>
+  </div>
+  <div class="outcome" id="outcome" hidden>
+    <div class="oc-main"><span class="oc-badge mono" id="oc-badge"></span><span id="oc-text"></span></div>
+    <div class="oc-actions">
+      <button class="btn btn-ghost" id="cb-second" hidden>Deploy the same code on a second machine</button>
+      <button class="btn btn-ghost" id="cb-reset">Start over</button>
+    </div>
+    <p class="oc-note" id="oc-note"></p>
+  </div>
+</div>
+</main>
+<footer><div class="wrap foot"><span>Streamed live from the NoMeshOps server</span></div></footer>
+<script src="/static/demo.js"></script>
+</body></html>

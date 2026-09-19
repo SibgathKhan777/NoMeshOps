@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in — NoMeshOps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head><body>
+<header class="top"><div class="wrap topin">
+  <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a><span class="live">live server</span>
+  <nav class="top"><a href="/demo">Live demo</a><a href="/device" class="active">Sign in</a><a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source</a></nav>
+</div></header>
+<main>
+<div class="wrap view-head">
+  <div class="eyebrow">Hosted access · device sign-in</div>
+  <h1>One command in your shell. One approval here.</h1>
+  <p class="lede">Just like <span class="mono">aws login</span>: the CLI opens this page with a device code, you approve
+  it, and the session goes back to your terminal. This is the real endpoint. The code you enter is checked against a
+  live grant this server issued.</p>
+</div>
+<div class="wrap"><div class="login-grid">
+  <div class="term">
+    <div class="term-bar"><span class="lamp"></span><span class="lamp"></span><span class="lamp"></span><span class="term-title">your terminal</span><button class="term-replay" id="sim">simulate `nomeshops login`</button></div>
+    <div class="term-body" id="term"><span class="ln t-dim">Press “simulate” to see what the CLI prints, or run <span class="t-code">nomeshops login</span> for real against this server.</span></div>
+  </div>
+  <div class="authbox" id="box">
+    <div class="auth-step" data-step="1">
+      <div class="eyebrow">Step 1 of 2</div><h2 class="auth-h">Enter the code from your terminal</h2>
+      <p class="auth-p">The CLI printed a code like <span class="mono">XXXX-XXXX</span>. Enter it so we know which terminal is asking.</p>
+      <form id="form"><div class="field"><label for="code">Device code</label><input id="code" class="code-input" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX" maxlength="9"></div>
+      <p class="msg" id="msg"></p><button class="btn btn-primary" id="next" type="submit">Continue</button></form>
+    </div>
+    <div class="auth-step" data-step="2" hidden>
+      <div class="eyebrow">Step 2 of 2</div><h2 class="auth-h">Allow the NoMeshOps CLI?</h2>
+      <p class="auth-p">Code <span class="mono" id="echo"></span> is requesting a 12-hour session that can:</p>
+      <ul class="scopes" id="scopes"></ul>
+      <p class="auth-p small">It cannot touch anything outside your registered machines. The session ends after 12 hours or when you revoke it.</p>
+      <div class="hero-cta" style="margin-top:18px"><button class="btn btn-primary" id="approve">Allow</button><button class="btn btn-ghost" id="deny">Don't allow</button></div>
+    </div>
+    <div class="auth-step" data-step="3" hidden>
+      <div class="eyebrow">Signed in</div><h2 class="auth-h">Go back to your terminal.</h2>
+      <p class="auth-p">The session was sent to the CLI. You can close this tab. Your terminal is ready:</p>
+      <div class="pre" style="margin-top:12px"><pre><code>nomeshops deploy --repo https://github.com/you/api.git --target prod-1</code></pre></div>
+    </div>
+    <div class="auth-step" data-step="4" hidden>
+      <div class="eyebrow">Not allowed</div><h2 class="auth-h">Nothing was granted.</h2>
+      <p class="auth-p">The terminal was told the request was declined. No session exists.</p>
+      <button class="btn btn-ghost" id="again" style="margin-top:14px">Start again</button>
+    </div>
+  </div>
+</div>
+<p class="proto-note">Under the hood: the CLI calls <span class="mono">/api/device/start</span> to get a code, this page confirms it with
+<span class="mono">/api/device/lookup</span>, your choice posts to <span class="mono">/api/device/decision</span>, and the CLI polling
+<span class="mono">/api/device/poll</span> receives the session token. Try the whole exchange with the simulate button.</p>
+</div>
+</main>
+<footer><div class="wrap foot"><span>NoMeshOps hosted sign-in</span></div></footer>
+<script src="/static/device.js"></script>
+</body></html>
