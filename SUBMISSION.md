@@ -93,6 +93,24 @@ failure mode of anything that learns from its own outcomes, and it is the thing 
 | **Amazon S3** | Audit trail: one JSON record per run (fingerprint, scan, predicted issues, each attempt with raw output tails, fix chain with its source, verification results, event timeline). SSM also streams full command output there. |
 | **Amazon ECR, IAM, CloudWatch Logs** | Image registry, least-privilege roles (task role is scoped to tagged instances, one table, one bucket), container logs. |
 
+### Where the $200 credit actually goes
+
+Checked against the hackathon's Ship It free-tier list (SageMaker AI; EKS/ECS/Fargate; Lambda/API Gateway/Step
+Functions; EC2/Lightsail/App Runner/Amplify Hosting; S3/DynamoDB/RDS/Aurora; Cognito; CloudFront/Route
+53/EventBridge/SQS/SNS/CloudWatch): every service above is on that list except Bedrock, SSM, ECR, and IAM. That
+split matters for budgeting, not just compliance:
+
+- **Bedrock is the only real cost driver.** It has no free tier at all — every fix-generation call is billed per
+  token from the first request, unlike ECS/S3/DynamoDB/API Gateway/CloudWatch, which stay inside their standing free
+  tiers at demo scale. This is why the system treats a model call as a last resort (deterministic rules, then the
+  knowledge base, then Bedrock) and caps it at one call per run — it is a budget constraint as much as a design one.
+  `LLM_BACKEND=anthropic` (direct API) or `LLM_BACKEND=none` (deterministic + knowledge base only) are the fallbacks
+  if credits run low before the demo.
+- **SSM Run Command isn't billed separately** — only the underlying EC2 instance is, so it's absent from the list
+  without being a cost concern.
+- **ECR** carries its own small free tier (500MB / 12 months), trivial for one container image.
+- **IAM** is always free.
+
 ## Design choices an infra reviewer will care about
 
 - **Deterministic before probabilistic.** The rules table runs in well under a millisecond, touches no network, and
