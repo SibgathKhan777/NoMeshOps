@@ -250,18 +250,18 @@ def device_poll(device_code: str):
 # package managers, so the demo proves the agent on more than just AWS. Each entry is a real
 # Docker container (scripts/local_targets.sh) or, in AWS mode, a real EC2 instance id.
 DEMO_TARGETS = {
-    "aws-ubuntu":   {"instance": "nomeshops-ubuntu22",     "cloud": "AWS EC2",
-                     "label": "AWS EC2 · Ubuntu 22.04 · x86_64", "port": 8000},
-    "aws-al2023":   {"instance": "nomeshops-al2023",       "cloud": "AWS EC2",
-                     "label": "AWS EC2 · Amazon Linux 2023 · x86_64", "port": 8001},
-    "gcp-debian":   {"instance": "nomeshops-gcp-debian",   "cloud": "Google Cloud",
-                     "label": "Google Cloud · Debian 12 · x86_64", "port": 8002},
-    "azure-ubuntu": {"instance": "nomeshops-azure-ubuntu", "cloud": "Azure / DigitalOcean",
-                     "label": "Azure / DigitalOcean · Ubuntu 24.04 · x86_64", "port": 8003},
-    "rocky":        {"instance": "nomeshops-rocky",        "cloud": "Oracle Cloud / on-prem",
-                     "label": "Oracle Cloud / on-prem · Rocky Linux 9 · x86_64", "port": 8004},
-    "alpine":       {"instance": "nomeshops-alpine",       "cloud": "Fly.io / lightweight VPS",
-                     "label": "Fly.io / lightweight VPS · Alpine 3.20 · x86_64", "port": 8005},
+    "aws-ubuntu":   {"instance": os.getenv("DEMO_INSTANCE_AWS_UBUNTU", "nomeshops-ubuntu22"),
+                     "cloud": "AWS EC2", "label": "AWS EC2 · Ubuntu 22.04 · x86_64", "port": 8000},
+    "aws-al2023":   {"instance": os.getenv("DEMO_INSTANCE_AWS_AL2023", "nomeshops-al2023"),
+                     "cloud": "AWS EC2", "label": "AWS EC2 · Amazon Linux 2023 · x86_64", "port": 8001},
+    "gcp-debian":   {"instance": os.getenv("DEMO_INSTANCE_GCP_DEBIAN", "nomeshops-gcp-debian"),
+                     "cloud": "Google Cloud", "label": "Google Cloud · Debian 12 · x86_64", "port": 8002},
+    "azure-ubuntu": {"instance": os.getenv("DEMO_INSTANCE_AZURE_UBUNTU", "nomeshops-azure-ubuntu"),
+                     "cloud": "Azure / DigitalOcean", "label": "Azure / DigitalOcean · Ubuntu 24.04 · x86_64", "port": 8003},
+    "rocky":        {"instance": os.getenv("DEMO_INSTANCE_ROCKY", "nomeshops-rocky"),
+                     "cloud": "Oracle Cloud / on-prem", "label": "Oracle Cloud / on-prem · Rocky Linux 9 · x86_64", "port": 8004},
+    "alpine":       {"instance": os.getenv("DEMO_INSTANCE_ALPINE", "nomeshops-alpine"),
+                     "cloud": "Fly.io / lightweight VPS", "label": "Fly.io / lightweight VPS · Alpine 3.20 · x86_64", "port": 8005},
 }
 DEMO_REPO = "https://github.com/SibgathKhan777/nomeshops-sample.git"
 
@@ -269,8 +269,15 @@ DEMO_REPO = "https://github.com/SibgathKhan777/nomeshops-sample.git"
 @router.get("/api/demo/targets")
 def demo_targets():
     """Single source of truth for the target picker, so the UI can never drift from what the
-    server can actually reach."""
-    return {"targets": [{"id": k, **v, "port": v["port"]} for k, v in DEMO_TARGETS.items()]}
+    server can actually reach. In docker mode every container-name target is reachable by
+    definition. In ssm mode, only a target explicitly pointed at a real EC2 instance id (i-...)
+    via a DEMO_INSTANCE_* env var is listed — the rest would just be an SSM InvalidInstanceId
+    error against a container name that has no EC2 counterpart on this deployment."""
+    live = {
+        k: v for k, v in DEMO_TARGETS.items()
+        if settings.executor == "docker" or v["instance"].startswith("i-")
+    }
+    return {"targets": [{"id": k, **v, "port": v["port"]} for k, v in live.items()]}
 
 
 # The demo deploys ANY public repo the visitor gives it — that is the actual product, not a
@@ -314,6 +321,15 @@ def demo_deploy(request: Request, target: str = "aws-ubuntu", repo: str = "", br
     acc = _account_from_request(request)
     if not acc:
         raise HTTPException(401, "sign in to run the live demo")
+
+    # Validate everything about the request itself before touching the account's run quota —
+    # an unreachable target or a bad repo URL must not cost the account one of its 3 free runs.
+    tgt = DEMO_TARGETS.get(target)
+    if not tgt or not (settings.executor == "docker" or tgt["instance"].startswith("i-")):
+        raise HTTPException(400, "unknown target")
+    repo_url = _validate_repo_url(repo or DEMO_REPO)
+    branch = branch.strip() or None
+
     with _users_lock:
         users = _load_users()
         user = users.get(acc["email"])
@@ -324,12 +340,6 @@ def demo_deploy(request: Request, target: str = "aws-ubuntu", repo: str = "", br
             raise HTTPException(403, f"you've used all {DEMO_RUN_LIMIT} free demo runs on this account")
         user["demo_runs"] = used + 1
         _save_users(users)
-    tgt = DEMO_TARGETS.get(target)
-    if not tgt:
-        raise HTTPException(400, "unknown target")
-
-    repo_url = _validate_repo_url(repo or DEMO_REPO)
-    branch = branch.strip() or None
     req = {
         "repo_url": repo_url, "instance_id": tgt["instance"], "branch": branch,
         "app_port": tgt["port"], "health_path": (health_path or "/health").strip(),

@@ -41,12 +41,20 @@ aws iam put-role-policy --role-name "$TASK_ROLE" --policy-name nomeshops-task --
 [ "$NEW_ROLE" = "1" ] && { echo "waiting for IAM propagation"; sleep 12; }
 aws logs create-log-group --log-group-name "$LOG_GROUP" --region "$REGION" 2>/dev/null || true
 
+# DEMO_INSTANCE_* map the hosted demo's target picker to real EC2 instance ids (from
+# launch_targets.sh). Under EXECUTOR=ssm, app/web.py only lists a target once its instance value
+# looks like a real id (i-...) — the other four entries in DEMO_TARGETS are container names with
+# no EC2 counterpart on this deployment, so they stay hidden rather than failing when clicked.
+DEMO_ENV=""
+[ -n "${DEMO_INSTANCE_AWS_UBUNTU:-}" ] && DEMO_ENV="$DEMO_ENV,{\"name\":\"DEMO_INSTANCE_AWS_UBUNTU\",\"value\":\"$DEMO_INSTANCE_AWS_UBUNTU\"}"
+[ -n "${DEMO_INSTANCE_AWS_AL2023:-}" ] && DEMO_ENV="$DEMO_ENV,{\"name\":\"DEMO_INSTANCE_AWS_AL2023\",\"value\":\"$DEMO_INSTANCE_AWS_AL2023\"}"
+
 CONTAINER=$(cat <<JSON
 {"image":"$IMAGE_PINNED","containerPort":8080,
  "awsLogsConfiguration":{"logGroup":"$LOG_GROUP","logStreamPrefix":"ecs"},
  "environment":[{"name":"AWS_REGION","value":"$REGION"},{"name":"LOGS_BUCKET","value":"$LOGS_BUCKET"},
                 {"name":"FIXES_TABLE","value":"${FIXES_TABLE:-deployment_fixes}"},
-                {"name":"BEDROCK_MODEL_ID","value":"${BEDROCK_MODEL_ID:-global.anthropic.claude-sonnet-4-6}"}]}
+                {"name":"BEDROCK_MODEL_ID","value":"${BEDROCK_MODEL_ID:-global.anthropic.claude-sonnet-4-6}"}$DEMO_ENV]}
 JSON
 )
 

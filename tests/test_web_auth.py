@@ -122,6 +122,28 @@ def test_demo_examples_and_targets_endpoints(client):
     assert {"AWS EC2", "Google Cloud", "Azure / DigitalOcean", "Oracle Cloud / on-prem", "Fly.io / lightweight VPS"} == {t["cloud"] for t in targets}
 
 
+def test_demo_targets_under_ssm_executor_only_lists_real_instance_ids(client, monkeypatch):
+    """The bug this closes: DEMO_TARGETS' six entries are container names, valid only under
+    EXECUTOR=docker. Under EXECUTOR=ssm (the hosted-on-real-AWS case), AWS Systems Manager needs
+    an actual EC2 instance id (i-...) — a container name there is a guaranteed InvalidInstanceId
+    failure, not a working demo target. Only a target explicitly pointed at a real id should
+    survive the listing, and deploying to a filtered-out target must be rejected up front rather
+    than burning one of the account's 3 free runs on a request that cannot succeed."""
+    import dataclasses
+    import app.web as web
+    monkeypatch.setattr(web, "settings", dataclasses.replace(web.settings, executor="ssm"))
+    assert client.get("/api/demo/targets").json()["targets"] == []
+
+    tok = client.post("/api/auth/signup", json={"email": "c@d.com", "password": "longenough"}).json()["token"]
+    r = client.get(f"/api/demo/deploy?target=aws-ubuntu&repo=https://github.com/x/y.git&token={tok}")
+    assert r.status_code == 400
+    assert client.get("/api/auth/me", headers={"authorization": f"Bearer {tok}"}).json()["demo_runs_remaining"] == 3
+
+    monkeypatch.setattr(web, "DEMO_TARGETS", {**web.DEMO_TARGETS, "aws-ubuntu": {**web.DEMO_TARGETS["aws-ubuntu"], "instance": "i-0real"}})
+    targets = client.get("/api/demo/targets").json()["targets"]
+    assert [t["id"] for t in targets] == ["aws-ubuntu"]
+
+
 def test_device_decision_rejects_unauthenticated_approval(client):
     """The bug this closes: approval used to accept a client-supplied name with no verification
     at all. It must now require a real signed-in account."""
