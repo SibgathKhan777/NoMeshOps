@@ -4,9 +4,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/auth.css">
 </head><body>
 <header class="top"><div class="wrap topin">
   <a class="brand" href="/"><span class="dot"></span>NoMeshOps</a><span class="live">live server</span>
+  <span id="acct-slot"></span>
   <nav class="top"><a href="/demo">Live demo</a><a href="/device" class="active">Sign in</a><a href="https://github.com/SibgathKhan777/NoMeshOps" target="_blank" rel="noopener">Source</a></nav>
 </div></header>
 <main>
@@ -31,9 +33,9 @@
     </div>
     <div class="auth-step" data-step="2" hidden>
       <div class="eyebrow">Step 2 of 2</div><h2 class="auth-h">Allow the NoMeshOps CLI?</h2>
-      <p class="auth-p">Code <span class="mono" id="echo"></span> is requesting a 12-hour session that can:</p>
+      <p class="auth-p">Signed in as <span class="mono" id="approver-email"></span>. Code <span class="mono" id="echo"></span> is requesting a session that can:</p>
       <ul class="scopes" id="scopes"></ul>
-      <p class="auth-p small">It cannot touch anything outside your registered machines. The session ends after 12 hours or when you revoke it.</p>
+      <p class="auth-p small">This hands the terminal an exact copy of your own signed-in session, not a separate one — sign out of either and the other ends too.</p>
       <div class="hero-cta" style="margin-top:18px"><button class="btn btn-primary" id="approve">Allow</button><button class="btn btn-ghost" id="deny">Don't allow</button></div>
     </div>
     <div class="auth-step" data-step="3" hidden>
@@ -54,5 +56,6 @@
 </div>
 </main>
 <footer><div class="wrap foot"><span>NoMeshOps hosted sign-in</span></div></footer>
+<script src="/static/auth.js"></script>
 <script src="/static/device.js"></script>
 </body></html>

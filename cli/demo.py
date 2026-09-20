@@ -1,8 +1,11 @@
-"""Colored terminal demo. Runs the LangGraph loop in-process (local AWS creds) or against a deployed
-orchestrator URL (SSE stream). Usage:
+"""Colored terminal demo. Runs the LangGraph loop in-process (local AWS creds) or against a hosted
+NoMeshOps server over its authenticated API (device-code sign-in, like `aws login`). Usage:
 
   python -m cli.demo deploy --repo https://github.com/you/sample --instance i-0123456789abcdef0
-  python -m cli.demo deploy --repo ... --instance ... --url http://<ecs-express-url>
+  python -m cli.demo login --url https://your-server           # sign in once per server
+  python -m cli.demo deploy --repo ... --instance ... --url https://your-server
+  python -m cli.demo whoami --url https://your-server
+  python -m cli.demo logout --url https://your-server
   python -m cli.demo fingerprint --instance i-...
   python -m cli.demo fixes list | fixes delete <signature> | fixes clear
   python -m cli.demo attempts
@@ -10,7 +13,9 @@ orchestrator URL (SSE stream). Usage:
 from __future__ import annotations
 
 import json
+import pathlib
 import time
+import webbrowser
 
 import typer
 from rich.console import Console
@@ -25,6 +30,8 @@ console = Console()
 STYLE = {"info": "white", "warn": "yellow", "error": "bold red", "success": "bold green",
          "rules": "cyan", "kb": "green", "knowledge": "green", "llm": "magenta", "bedrock": "magenta"}
 ICON = {"info": "·", "warn": "!", "error": "✗", "success": "✓", "rules": "⚙", "kb": "◆", "knowledge": "◆", "llm": "✦", "bedrock": "✦"}
+
+SESSION_PATH = pathlib.Path.home() / ".nomeshops" / "session.json"
 
 
 def print_event(ev: dict) -> None:
@@ -50,21 +57,144 @@ def _summary(final: dict) -> None:
                         border_style="green" if ok else "red"))
 
 
+# --------------------------------------------------------------------------- session store (per hosted server)
+
+def _norm(url: str) -> str:
+    return url.rstrip("/")
+
+
+def _load_sessions() -> dict:
+    try:
+        return json.loads(SESSION_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_sessions(sessions: dict) -> None:
+    SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SESSION_PATH.write_text(json.dumps(sessions, indent=2))
+    try:
+        SESSION_PATH.chmod(0o600)
+    except OSError:
+        pass
+
+
+def _session_for(url: str) -> dict | None:
+    return _load_sessions().get(_norm(url))
+
+
+@app.command()
+def login(url: str = typer.Option(..., help="hosted NoMeshOps server, e.g. https://your-server")):
+    """Sign in to a hosted NoMeshOps server: opens your browser, you approve, the session comes
+    back here. Same device-code exchange as `aws login`. No password ever touches this terminal."""
+    import httpx
+    base = _norm(url)
+    r = httpx.post(f"{base}/api/device/start", timeout=10)
+    r.raise_for_status()
+    d = r.json()
+    verify_url = f"{base}{d['verification_uri']}?code={d['user_code']}"
+    console.print(Panel(f"Opening your browser to sign in to NoMeshOps…\n"
+                        f"If it does not open, visit:\n  [cyan]{verify_url}[/]\n"
+                        f"and confirm the code:\n  [bold yellow]{d['user_code']}[/]",
+                        border_style="blue"))
+    opened = False
+    try:
+        opened = webbrowser.open(verify_url)
+    except Exception:  # noqa: BLE001
+        opened = False
+    if not opened:
+        console.print("[dim](could not open a browser automatically — use the link above)[/]")
+
+    deadline = time.time() + d["expires_in"]
+    interval = max(2, d.get("interval", 2))
+    with console.status("Waiting for approval in the browser…"):
+        while time.time() < deadline:
+            time.sleep(interval)
+            pr = httpx.get(f"{base}/api/device/poll", params={"device_code": d["device_code"]}, timeout=10)
+            pr.raise_for_status()
+            pd = pr.json()
+            if pd["status"] == "approved":
+                sessions = _load_sessions()
+                sessions[base] = {"token": pd["session_token"], "email": pd["subject"]}
+                _save_sessions(sessions)
+                console.print(f"[bold green]✓ signed in as {pd['subject']}[/] · session cached in {SESSION_PATH}")
+                raise typer.Exit(0)
+            if pd["status"] == "denied":
+                console.print("[bold red]✗ request declined in the browser — no session was created[/]")
+                raise typer.Exit(1)
+            if pd["status"] == "expired":
+                break
+    console.print("[bold red]login timed out — run `nomeshops login` again[/]")
+    raise typer.Exit(1)
+
+
+@app.command()
+def logout(url: str = typer.Option(..., help="hosted NoMeshOps server")):
+    """End the local session for a hosted server (and tell the server, best-effort)."""
+    import httpx
+    base = _norm(url)
+    sessions = _load_sessions()
+    sess = sessions.pop(base, None)
+    _save_sessions(sessions)
+    if sess:
+        try:
+            httpx.post(f"{base}/api/auth/logout", headers={"authorization": f"Bearer {sess['token']}"}, timeout=5)
+        except httpx.HTTPError:
+            pass
+        console.print(f"signed out of {base} (was {sess['email']})")
+    else:
+        console.print(f"no local session for {base}")
+
+
+@app.command()
+def whoami(url: str = typer.Option(None, help="hosted NoMeshOps server; omit to list every saved session")):
+    """Show who you are signed in as, and how many free demo runs remain on that account."""
+    import httpx
+    sessions = _load_sessions()
+    targets = {url: sessions[_norm(url)]} if url and _norm(url) in sessions else (sessions if not url else {})
+    if url and _norm(url) not in sessions:
+        console.print(f"not signed in to {url} — run: python -m cli.demo login --url {url}")
+        raise typer.Exit(1)
+    if not sessions:
+        console.print("not signed in anywhere — run: python -m cli.demo login --url <server>")
+        raise typer.Exit(1)
+    for base, sess in (targets or sessions).items():
+        try:
+            r = httpx.get(f"{base}/api/auth/me", headers={"authorization": f"Bearer {sess['token']}"}, timeout=10)
+            if r.status_code == 401:
+                console.print(f"{base}  [red]session expired — run: python -m cli.demo login --url {base}[/]")
+                continue
+            r.raise_for_status()
+            me = r.json()
+            console.print(f"{base}  [bold]{me['email']}[/]  ({me['demo_runs_remaining']}/{me['demo_runs_limit']} free demo runs left)")
+        except httpx.HTTPError as e:
+            console.print(f"{base}  [red]unreachable: {e}[/]")
+
+
 @app.command()
 def deploy(repo: str = typer.Option(..., help="git URL of the project"),
            instance: str = typer.Option(..., help="target EC2 instance id (or docker container name with EXECUTOR=docker)"),
            branch: str = typer.Option(None), start_command: str = typer.Option(None),
            port: int = typer.Option(8000), health_path: str = typer.Option("/health"),
            keep_running: bool = typer.Option(False), preempt: bool = typer.Option(None, help="pre-apply predicted fixes"),
-           url: str = typer.Option(None, help="orchestrator base URL; omit to run in-process")):
+           url: str = typer.Option(None, help="hosted NoMeshOps server; sign in first with `login --url`. Omit to run in-process")):
     req = {"repo_url": repo, "instance_id": instance, "branch": branch, "start_command": start_command,
            "app_port": port, "health_path": health_path, "keep_running": keep_running,
            "preempt_predicted_fixes": preempt}
     _banner(req)
     if url:
         import httpx
+        base = _norm(url)
+        sess = _session_for(base)
+        if not sess:
+            console.print(f"[bold red]not signed in to {base}[/] — run: python -m cli.demo login --url {base}")
+            raise typer.Exit(1)
         final = {}
-        with httpx.stream("POST", f"{url.rstrip('/')}/deploy/stream", json=req, timeout=None) as r:
+        headers = {"authorization": f"Bearer {sess['token']}"}
+        with httpx.stream("POST", f"{base}/api/deploy/stream", json=req, headers=headers, timeout=None) as r:
+            if r.status_code == 401:
+                console.print(f"[bold red]session expired or revoked[/] — run: python -m cli.demo login --url {base}")
+                raise typer.Exit(1)
             r.raise_for_status()
             event = None
             for line in r.iter_lines():

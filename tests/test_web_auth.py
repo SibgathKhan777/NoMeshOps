@@ -120,3 +120,60 @@ def test_demo_examples_and_targets_endpoints(client):
     targets = client.get("/api/demo/targets").json()["targets"]
     assert len(targets) == 6
     assert {"AWS EC2", "Google Cloud", "Azure / DigitalOcean", "Oracle Cloud / on-prem", "Fly.io / lightweight VPS"} == {t["cloud"] for t in targets}
+
+
+def test_device_decision_rejects_unauthenticated_approval(client):
+    """The bug this closes: approval used to accept a client-supplied name with no verification
+    at all. It must now require a real signed-in account."""
+    start = client.post("/api/device/start").json()
+    r = client.post("/api/device/decision", json={"user_code": start["user_code"], "approve": True})
+    assert r.status_code == 401
+    poll = client.get(f"/api/device/poll?device_code={start['device_code']}").json()
+    assert poll["status"] == "pending"
+
+
+def test_device_decision_approval_uses_the_real_signed_in_identity(client):
+    signup = client.post("/api/auth/signup", json={"email": "real@person.com", "password": "longenough"}).json()
+    start = client.post("/api/device/start").json()
+    r = client.post("/api/device/decision", json={"user_code": start["user_code"], "approve": True},
+                    headers={"authorization": f"Bearer {signup['token']}"})
+    assert r.status_code == 200 and r.json()["status"] == "approved"
+
+    poll = client.get(f"/api/device/poll?device_code={start['device_code']}").json()
+    assert poll["status"] == "approved"
+    assert poll["subject"] == "real@person.com", "the approved identity must come from the verified session, never a client field"
+    assert poll["session_token"] == signup["token"], "device login should hand out the browser's own real account token, not an invented one"
+
+    me = client.get("/api/auth/me", headers={"authorization": f"Bearer {poll['session_token']}"})
+    assert me.status_code == 200 and me.json()["email"] == "real@person.com"
+
+
+def test_api_deploy_stream_requires_auth(client):
+    r = client.post("/api/deploy/stream", json={"repo_url": "https://github.com/x/y.git", "instance_id": "i-1",
+                                                 "app_port": 8000, "health_path": "/health"})
+    assert r.status_code == 401
+
+
+def test_api_deploy_stream_rejects_disallowed_repo_host(client):
+    tok = client.post("/api/auth/signup", json={"email": "a@b.com", "password": "longenough"}).json()["token"]
+    r = client.post("/api/deploy/stream", json={"repo_url": "https://evil.example.com/x.git", "instance_id": "i-1",
+                                                 "app_port": 8000, "health_path": "/health"},
+                    headers={"authorization": f"Bearer {tok}"})
+    assert r.status_code == 400
+
+
+def test_api_deploy_stream_runs_for_a_signed_in_account(client, monkeypatch):
+    tok = client.post("/api/auth/signup", json={"email": "a@b.com", "password": "longenough"}).json()["token"]
+
+    def fake_stream(req):
+        yield "finalize", {"events": [{"level": "info", "node": "scan", "msg": "hi", "t": 0.1}],
+                           "deploy_success": True, "final_status": "success", "duration_s": 1.2}
+    monkeypatch.setattr("app.web.stream_deploy", fake_stream)
+
+    with client.stream("POST", "/api/deploy/stream",
+                       json={"repo_url": "https://github.com/x/y.git", "instance_id": "i-1",
+                             "app_port": 8000, "health_path": "/health"},
+                       headers={"authorization": f"Bearer {tok}"}) as r:
+        assert r.status_code == 200
+        body = "".join(r.iter_text())
+    assert "deploy_success\": true" in body

@@ -16,7 +16,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from app.config import settings
-from app.graph import stream_deploy
+from app.graph import run_deploy, stream_deploy, summarize
+from app.models import DeployRequest
 from app.nodes import knowledge
 
 router = APIRouter()
@@ -140,8 +141,11 @@ def auth_logout(request: Request):
     return {"ok": True}
 
 # --------------------------------------------------------------------------- device-code auth
-CODE_TTL = 600          # seconds a device code is valid before approval
-SESSION_TTL = 12 * 3600  # granted session lifetime
+# Deliberately reuses the SAME token namespace as email+password login (_account_sessions), not a
+# parallel one: approving a device request just hands the CLI a copy of the browser's own already-
+# valid account token, tied to the real signed-in identity. An earlier version of this trusted a
+# client-supplied "subject" string with no verification at all — fixed here, not just wired up.
+CODE_TTL = 600  # seconds a device code is valid before approval
 
 
 @dataclass
@@ -151,7 +155,7 @@ class DeviceGrant:
     created: float = field(default_factory=time.time)
     status: str = "pending"        # pending | approved | denied | expired
     session_token: str | None = None
-    subject: str | None = None
+    subject: str | None = None     # the approving account's real email, set from its verified session
 
     def expired(self) -> bool:
         return time.time() - self.created > CODE_TTL
@@ -159,7 +163,6 @@ class DeviceGrant:
 
 _grants: dict[str, DeviceGrant] = {}         # user_code -> grant
 _by_device: dict[str, DeviceGrant] = {}      # device_code -> grant
-_sessions: dict[str, dict] = {}              # session_token -> {subject, created}
 _ALPHA = "BCDFGHJKLMNPQRSTVWXZ23456789"
 
 
@@ -188,6 +191,7 @@ def device_start(payload: dict | None = None):
         "verification_uri": "/device",
         "expires_in": CODE_TTL,
         "interval": 2,
+        "session_ttl": ACCOUNT_SESSION_TTL,
     }
 
 
@@ -202,19 +206,23 @@ def device_lookup(user_code: str):
 
 
 @router.post("/api/device/decision")
-def device_decision(payload: dict):
-    """The browser approves or denies after the user consents."""
+def device_decision(payload: dict, request: Request):
+    """The browser approves or denies after the user consents. Approval requires the browser
+    itself to be signed in with a real account — the CLI ends up with an exact copy of that
+    account's own token, never an invented identity."""
     _sweep()
     g = _grants.get(str(payload.get("user_code", "")).upper().strip())
     if not g:
         raise HTTPException(404, "unknown code")
-    if g.status not in ("pending",):
+    if g.status != "pending":
         return {"status": g.status}
     if payload.get("approve"):
+        acc = _account_from_request(request)
+        if not acc:
+            raise HTTPException(401, "sign in with your NoMeshOps account first")
         g.status = "approved"
-        g.session_token = secrets.token_urlsafe(32)
-        g.subject = payload.get("subject") or "sibgath"
-        _sessions[g.session_token] = {"subject": g.subject, "created": time.time()}
+        g.session_token = acc["token"]
+        g.subject = acc["email"]
     else:
         g.status = "denied"
     return {"status": g.status}
@@ -228,26 +236,13 @@ def device_poll(device_code: str):
     if not g:
         raise HTTPException(404, "unknown device code")
     if g.status == "approved":
-        return {"status": "approved", "session_token": g.session_token, "subject": g.subject, "expires_in": SESSION_TTL}
+        return {"status": "approved", "session_token": g.session_token, "subject": g.subject, "expires_in": ACCOUNT_SESSION_TTL}
     return {"status": g.status}
 
 
-def _auth(request: Request) -> dict | None:
-    tok = request.headers.get("authorization", "")
-    if tok.lower().startswith("bearer "):
-        tok = tok[7:]
-    sess = _sessions.get(tok)
-    if sess and time.time() - sess["created"] < SESSION_TTL:
-        return sess
-    return None
-
-
-@router.get("/api/session")
-def session_info(request: Request):
-    sess = _auth(request)
-    if not sess:
-        raise HTTPException(401, "no session")
-    return {"subject": sess["subject"], "age_s": round(time.time() - sess["created"])}
+# NOTE: there used to be a second, parallel /api/session + _auth() here backed by a session store
+# that no longer exists (see the note on the device-code section above). GET /api/auth/me is the
+# one real equivalent now — both the CLI's `whoami` and the browser use it.
 
 
 # --------------------------------------------------------------------------- live demo (real deploy)
@@ -377,3 +372,48 @@ def web_fixes():
 def demo_examples():
     """Quick-fill examples for the UI — not a menu of required choices."""
     return {"examples": [{"id": k, **v} for k, v in DEMO_EXAMPLES.items()]}
+
+
+# --------------------------------------------------------------------------- authenticated deploy API
+# The hosted, multi-tenant surface: what `nomeshops login` + `nomeshops deploy --url` actually talk to.
+# Distinct from the plain /deploy and /deploy/stream on app/main.py, which are unauthenticated by
+# design for someone self-hosting the orchestrator against their own account and own targets.
+#
+# Known gap, disclosed rather than hidden: signing in here proves who you are, not which target
+# machines you are allowed to reach. Any signed-in account may currently deploy to any instance_id
+# this server's own AWS/Docker credentials can reach — there is no per-account target ownership or
+# registration model yet. That is a real limitation for multi-tenant production use, not just an
+# unfinished feature.
+
+@router.post("/api/deploy", response_model=None)
+def api_deploy(req: DeployRequest, request: Request):
+    if not _account_from_request(request):
+        raise HTTPException(401, "sign in first — run `nomeshops login`")
+    payload = req.model_dump()
+    payload["repo_url"] = _validate_repo_url(payload["repo_url"])
+    return summarize(run_deploy(payload))
+
+
+@router.post("/api/deploy/stream")
+def api_deploy_stream(req: DeployRequest, request: Request):
+    """Same event shape as the unauthenticated /deploy/stream, gated behind a signed-in account."""
+    if not _account_from_request(request):
+        raise HTTPException(401, "sign in first — run `nomeshops login`")
+    payload = req.model_dump()
+    payload["repo_url"] = _validate_repo_url(payload["repo_url"])
+
+    def gen():
+        final = None
+        for node, delta in stream_deploy(payload):
+            for ev in delta.get("events", []) or []:
+                yield f"event: log\ndata: {json.dumps(ev)}\n\n"
+            if node == "finalize":
+                final = delta
+        result = {"final_status": (final or {}).get("final_status", "error"),
+                  "deploy_success": bool((final or {}).get("deploy_success")),
+                  "failure_reason": (final or {}).get("failure_reason"),
+                  "s3_key": (final or {}).get("s3_key"), "stored_fix": bool((final or {}).get("stored_fix")),
+                  "duration_s": (final or {}).get("duration_s")}
+        yield f"event: result\ndata: {json.dumps(result)}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})

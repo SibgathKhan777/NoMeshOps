@@ -54,12 +54,46 @@ a real per-manager bootstrap table, `PYTHON_BOOTSTRAP`/`PIP_VENV_BOOTSTRAP`, ins
 guess). All six targets are verified end to end with real deploys, including the psycopg2 source-build and the
 Debian→Azure knowledge-family transfer (0 model calls on the second cloud).
 
-## Device auth endpoints (used by `nomeshops login`)
-- `POST /api/device/start` → `{user_code, device_code}` (CLI)
-- `GET  /api/device/lookup?user_code=` → confirms a typed code (browser)
-- `POST /api/device/decision` `{user_code, approve}` (browser)
-- `GET  /api/device/poll?device_code=` → `{status, session_token}` when approved (CLI)
-- `GET  /api/session` with `Authorization: Bearer <token>` → session info
+## The terminal login is real, end to end (fixed and verified 2026-09-20)
 
-The store is in-memory (fine for a demo / single node). For production, back it with DynamoDB or Redis and put the
-server behind HTTPS; codes expire in 10 min, sessions in 12 h.
+`nomeshops login --url <server>` (`cli/demo.py`) does the actual `aws login`-style exchange: `POST /api/device/start`
+for a code, opens the browser at `<server>/device?code=XXXX-XXXX` (the page auto-fills and looks up that code),
+polls `GET /api/device/poll` until approved, and saves `{token, email}` to `~/.nomeshops/session.json` (0600
+permissions), keyed by server URL so multiple hosted servers can be signed into at once. `nomeshops whoami` and
+`nomeshops logout` read/clear that file. `nomeshops deploy --url <server> ...` sends the saved token as a bearer
+header to the new authenticated `POST /api/deploy/stream`; a 401 tells the user to log in again rather than failing
+silently.
+
+Earlier this session, the device-approval flow and the real email/password account system were two unconnected
+token stores: `/api/device/decision` accepted a client-supplied `subject` string with **no verification at all**
+(the frontend literally hardcoded `subject: 'sibgath'`), and the token it handed back lived in a separate dict that
+`/api/deploy`'s auth check didn't even recognize — so a `nomeshops login` token would not have worked against
+anything. Fixed: approval now requires the *browser itself* to be signed in with a real account
+(`_account_from_request` on the decision call), and the CLI receives an exact copy of that account's own bearer
+token from `_account_sessions`, the same store `/api/auth/me` and the demo quota use. The dead parallel `_sessions`
+dict, `SESSION_TTL` constant, and the unused `/api/session` endpoint were removed rather than patched.
+
+Verified for real, not just unit-tested: ran `nomeshops login --url http://127.0.0.1:8090` from a terminal, which
+opened a real browser to `/device?code=...`; completed the sign-up and approval in that actual browser (not a
+scripted one); confirmed `~/.nomeshops/session.json` held a working token; ran `nomeshops whoami` (correct email
+and quota) and `nomeshops deploy --url ... --repo ... --instance nomeshops-ubuntu22`, which authenticated with the
+saved token and streamed a real deploy of the same never-registered `nomeshops-unseen-demo` repo through
+`/api/deploy/stream`, bootstrapping python/git/lxml build deps from a bare container and verifying a real health
+response; then `nomeshops logout` followed by `whoami` correctly reported signed-out.
+
+Endpoints:
+- `POST /api/device/start` → `{user_code, device_code, verification_uri, expires_in, interval}` (CLI)
+- `GET  /api/device/lookup?user_code=` → confirms a pending code and lists requested scopes (browser)
+- `POST /api/device/decision` `{user_code, approve}`, `Authorization: Bearer <account token>` required to approve (browser)
+- `GET  /api/device/poll?device_code=` → `{status, session_token, subject}` once approved (CLI)
+- `POST /api/deploy` / `POST /api/deploy/stream` — authenticated equivalents of the plain `/deploy` and
+  `/deploy/stream` on `app/main.py`; arbitrary `instance_id`, repo checked against `ALLOWED_GIT_HOSTS`
+
+**Known gap, disclosed rather than hidden:** signing in proves who you are, not which target machines you may
+reach. Any signed-in account can currently deploy to any `instance_id` this server's own AWS/Docker credentials can
+reach — there is no per-account target ownership or registration model yet. The consent screen says so plainly
+rather than claiming a restriction that does not exist.
+
+The account/device store is in-memory plus a local JSON file (fine for a demo / single node). For production, back
+it with DynamoDB or Redis and put the server behind HTTPS; device codes expire in 10 minutes, account sessions in
+7 days.
