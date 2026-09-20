@@ -5,16 +5,56 @@ Fingerprints a target EC2 machine, deploys a Python project on it, and when the 
 Every fix is verified for real (install → import → app start → HTTP health check) before it is stored, so the
 same error resolves near-instantly the next time it is seen.
 
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph client["Where the user is"]
+        cli["Terminal<br/>nomeshops login / deploy / whoami"]
+        browser["Browser<br/>/ landing · /demo · /device sign-in"]
+    end
+
+    subgraph server["NoMeshOps server — FastAPI (ECS Express Mode)"]
+        auth["Auth &amp; sessions<br/>email+password (PBKDF2) + aws-login-style device code<br/>— one unified token store"]
+        api["API routes<br/>/api/deploy(/stream) — authenticated, any target<br/>/deploy(/stream) — self-hosted, no auth<br/>/api/demo/* — 2 real targets, 3 free runs/account"]
+    end
+
+    subgraph orch["LangGraph orchestrator"]
+        direction TB
+        scan[scan] --> fp[fingerprint] --> check["deterministic<br/>check"] --> deploy["deploy<br/>clone + venv + install"] --> verify["verify<br/>import → start → health"] --> finalize[finalize]
+        deploy -. install/health FAILED .-> rules["rules table<br/>no I/O"]
+        rules -. miss .-> kb["knowledge base<br/>exact-signature + family index"]
+        kb -. miss .-> llm["Bedrock<br/>1 call max"]
+        llm -. apply fix, retry ≤3 .-> deploy
+    end
+
+    subgraph targets["Target machines — SSM Run Command, no SSH, no inbound ports"]
+        t1["AWS EC2 · Ubuntu 22.04"]
+        t2["AWS EC2 · Amazon Linux 2023"]
+    end
+
+    subgraph backends["AWS backends (pluggable: local files in dev mode)"]
+        ddb[("DynamoDB<br/>deployment_fixes")]
+        s3[("S3<br/>audit trail")]
+        bedrock["Bedrock<br/>Claude, Converse API"]
+    end
+
+    github(("public git repo")) -. git clone .-> scan
+    cli --> api
+    browser --> api
+    api --> orch
+    verify --> targets
+    kb <-.-> ddb
+    llm <-.-> bedrock
+    finalize -. store .-> s3
+    finalize -. store verified fix .-> ddb
 ```
-Terminal / CLI
-      |
-      v
-FastAPI + LangGraph orchestrator   (ECS Express Mode)
-      |-- SSM Run Command --> target EC2 instances   (fingerprint, deploy, verify)
-      |-- boto3 ----------> DynamoDB deployment_fixes (signature -> verified fix)
-      |-- boto3 ----------> Amazon Bedrock (Claude, Converse API) — knowledge-base miss only
-      |-- boto3 ----------> S3 (attempt logs + raw SSM output)
-```
+
+Six clouds are supported end to end (`WEB.md` has the full list, proven with real deploys on each);
+the hosted demo above only lists the two backed by real EC2 machines it can currently reach — the
+rest are simulated in local Docker mode. Stop conditions: at most 3 fix attempts and 1 model call
+per run. Repo URLs are checked against an explicit git-host allow-list before anything reaches a
+target, and a per-target lock rejects a concurrent deploy on the same machine instead of corrupting it.
 
 ## Layout
 
@@ -72,7 +112,8 @@ curl -s localhost:8080/deploy -H 'content-type: application/json' \
 # deployed on ECS Express Mode (build -> ECR -> one create-express-gateway-service call -> public HTTPS URL)
 LOGS_BUCKET=... ./scripts/deploy_ecs_express.sh
 .venv/bin/python -m cli.demo deploy --repo ... --instance ... --url https://<express-url>
-# current deployment: https://no-29a7a5b2d87a4dd4b89fb4c09c5a466d.ecs.ap-south-1.on.aws  (GET /health, POST /deploy, POST /deploy/stream)
+# current deployment: https://no-7cbc2123abe543dfae0a7c09f665e2ff.ecs.ap-south-1.on.aws  (GET /health, POST /deploy, POST /deploy/stream)
+#   web platform on the same URL: / landing, /demo live 6-cloud picker (2 real targets on this deployment), /device sign-in
 # note: a freshly created *.on.aws name can sit in your ISP resolver's negative cache for a while;
 #       `curl --resolve <host>:443:<ip>` (ip from `dig +short <host>`) works immediately.
 ```
